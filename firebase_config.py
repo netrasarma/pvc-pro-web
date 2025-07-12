@@ -20,15 +20,16 @@ FIREBASE_CONFIG = {
 
 class FirebaseManager:
     def __init__(self):
+        import json
+        self.firebase_admin_initialized = False
         try:
-            # ADC will automatically find the credentials from the environment.
-            # No need for a file path.
+            # Initialize Firebase Admin SDK using Application Default Credentials (ADC)
             firebase_admin.initialize_app()
-            print("Firebase Admin SDK initialized successfully using Application Default Credentials.")
             self.firebase_admin_initialized = True
+            print("Firebase Admin SDK initialized successfully using Application Default Credentials (ADC).")
         except Exception as e:
             print(f"Error initializing Firebase Admin SDK with ADC: {e}")
-            # You might want to handle this more gracefully
+            print("Ensure the Cloud Run service account has the necessary permissions.")
             return
 
         try:
@@ -97,59 +98,6 @@ class FirebaseManager:
             print(f"Error checking login attempts for {email}: {e}")
             return False
             
-
-class FirebaseManager:
-    def __init__(self):
-        # Initialize Firebase Admin SDK
-        try:
-            cred = credentials.Certificate("firebase-adminsdk.json")
-            firebase_admin.initialize_app(cred)
-        except Exception as e:
-            print(f"Error initializing Firebase Admin SDK: {e}")
-            print("Please ensure firebase-adminsdk.json is present in the directory")
-            return
-
-        # Initialize Pyrebase for client-side operations
-        try:
-            self.pb = pyrebase.initialize_app(FIREBASE_CONFIG)
-            self.auth = self.pb.auth()
-            self.db = firestore.client()
-            
-            # Initialize collections
-            self.users_collection = self.db.collection('users')
-            self.devices_collection = self.db.collection('devices')
-            self.sessions_collection = self.db.collection('sessions')
-            self.activation_keys_collection = self.db.collection('activation_keys')
-            self.security_logs_collection = self.db.collection('security_logs')
-            self.admin_actions_collection = self.db.collection('admin_actions')
-            
-            # Initialize max devices and login attempts
-            self.max_devices_per_user = 2
-            self.max_login_attempts = 5
-            self.session_timeout_hours = 24
-
-            # Add missing _get_device_fingerprint method
-            import platform
-            import hashlib
-            import uuid
-
-        except Exception as e:
-            print(f"Error initializing Pyrebase: {e}")
-            print("Please check your Firebase configuration")
-            return
-
-    def _get_device_fingerprint(self):
-        """Generate unique device fingerprint"""
-        try:
-            # Collect system information
-            system_info = {
-                'platform': platform.platform(),
-                'processor': platform.processor(),
-                'machine': platform.machine(),
-                'node': platform.node(),
-                'system': platform.system(),
-                'release': platform.release()
-            }
             
             # Create fingerprint from system info
             fingerprint_string = ''.join(str(v) for v in system_info.values())
