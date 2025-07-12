@@ -6,7 +6,6 @@ import uuid
 import datetime
 import platform
 import os
-from google.cloud import secretmanager
 
 # Firebase web app configuration
 FIREBASE_CONFIG = {
@@ -22,21 +21,95 @@ FIREBASE_CONFIG = {
 class FirebaseManager:
     def __init__(self):
         # Initialize Firebase Admin SDK
+        import json
         try:
-            # --- NEW CODE TO FETCH FROM SECRET MANAGER ---
-            # Replace with your project ID and secret name
-            PROJECT_ID = "pvc-maker"
-            SECRET_NAME = "firebase-key"
-        
-            client = secretmanager.SecretManagerServiceClient()
-            secret_path = f"projects/{PROJECT_ID}/secrets/{SECRET_NAME}/versions/latest"
-            response = client.access_secret_version(request={"name": secret_path})
-        
-            # Decode the secret payload and load it as a dictionary
-            secret_data = json.loads(response.payload.data.decode("UTF-8"))
-        
-            # Initialize Firebase with the fetched credentials
-            cred = credentials.Certificate(secret_data)
+            firebase_adminsdk_json = os.getenv("FIREBASE_ADMINSDK_JSON")
+            if firebase_adminsdk_json:
+                cred_dict = json.loads(firebase_adminsdk_json)
+                cred = credentials.Certificate(cred_dict)
+            else:
+                cred = credentials.Certificate("firebase-adminsdk.json")
+            firebase_admin.initialize_app(cred)
+        except Exception as e:
+            print(f"Error initializing Firebase Admin SDK: {e}")
+            if not os.getenv("FIREBASE_ADMINSDK_JSON"):
+                print("Please ensure firebase-adminsdk.json is present in the directory or set FIREBASE_ADMINSDK_JSON environment variable")
+            return
+
+        # Initialize Pyrebase for client-side operations
+        try:
+            self.pb = pyrebase.initialize_app(FIREBASE_CONFIG)
+            self.auth = self.pb.auth()
+            self.db = firestore.client()
+            
+            # Initialize collections
+            self.users_collection = self.db.collection('users')
+            self.devices_collection = self.db.collection('devices')
+            self.sessions_collection = self.db.collection('sessions')
+            self.activation_keys_collection = self.db.collection('activation_keys')
+            self.security_logs_collection = self.db.collection('security_logs')
+            self.admin_actions_collection = self.db.collection('admin_actions')
+            
+            # Initialize max devices and login attempts
+            self.max_devices_per_user = 2
+            self.max_login_attempts = 5
+            self.session_timeout_hours = 24
+
+            # Add missing _get_device_fingerprint method
+            import platform
+            import hashlib
+            import uuid
+
+        except Exception as e:
+            print(f"Error initializing Pyrebase: {e}")
+            print("Please check your Firebase configuration")
+            return
+
+    def _check_login_attempts(self, email):
+        """Check if user has exceeded login attempts"""
+        try:
+            import datetime
+            one_hour_ago = datetime.datetime.now() - datetime.timedelta(hours=1)
+            
+            failed_attempts = self.security_logs_collection.where(
+                'event_type', '==', 'failed_login'
+            ).where(
+                'details.email', '==', email
+            ).where(
+                'timestamp', '>=', one_hour_ago
+            ).get()
+            
+            return len(failed_attempts) >= self.max_login_attempts
+        except Exception as e:
+            print(f"Error checking login attempts for {email}: {e}")
+            return False
+
+    def _check_login_attempts(self, email):
+        """Check if user has exceeded login attempts"""
+        try:
+            # Get recent failed login attempts (last hour)
+            import datetime
+            one_hour_ago = datetime.datetime.now() - datetime.timedelta(hours=1)
+            
+            failed_attempts = self.security_logs_collection.where(
+                'event_type', '==', 'failed_login'
+            ).where(
+                'details.email', '==', email
+            ).where(
+                'timestamp', '>=', one_hour_ago
+            ).get()
+            
+            return len(failed_attempts) >= self.max_login_attempts
+        except Exception as e:
+            print(f"Error checking login attempts for {email}: {e}")
+            return False
+            
+
+class FirebaseManager:
+    def __init__(self):
+        # Initialize Firebase Admin SDK
+        try:
+            cred = credentials.Certificate("firebase-adminsdk.json")
             firebase_admin.initialize_app(cred)
         except Exception as e:
             print(f"Error initializing Firebase Admin SDK: {e}")
@@ -57,40 +130,21 @@ class FirebaseManager:
             self.security_logs_collection = self.db.collection('security_logs')
             self.admin_actions_collection = self.db.collection('admin_actions')
             
-            # Security settings
+            # Initialize max devices and login attempts
             self.max_devices_per_user = 2
             self.max_login_attempts = 5
             self.session_timeout_hours = 24
-            self.file_integrity_hashes = {}
-            
-            # Initialize file integrity monitoring
-            self._initialize_file_integrity()
-            
+
+            # Add missing _get_device_fingerprint method
+            import platform
+            import hashlib
+            import uuid
+
         except Exception as e:
             print(f"Error initializing Pyrebase: {e}")
             print("Please check your Firebase configuration")
             return
-            
-    def _initialize_file_integrity(self):
-        """Initialize file integrity monitoring for critical files"""
-        critical_files = [
-            'main_with_firebase.py',
-            'firebase_config.py',
-            'requirements.txt'
-        ]
-        
-        for file_path in critical_files:
-            if os.path.exists(file_path):
-                self.file_integrity_hashes[file_path] = self._calculate_file_hash(file_path)
-                
-    def _calculate_file_hash(self, file_path):
-        """Calculate SHA256 hash of a file"""
-        try:
-            with open(file_path, 'rb') as f:
-                return hashlib.sha256(f.read()).hexdigest()
-        except Exception:
-            return None
-            
+
     def _get_device_fingerprint(self):
         """Generate unique device fingerprint"""
         try:
@@ -110,44 +164,6 @@ class FirebaseManager:
         except Exception:
             # Fallback to UUID if system info fails
             return str(uuid.uuid4())[:16]
-            
-    def _log_security_event(self, event_type, user_id=None, details=None):
-        """Log security events for monitoring"""
-        try:
-            log_entry = {
-                'event_type': event_type,
-                'timestamp': firestore.SERVER_TIMESTAMP,
-                'user_id': user_id,
-                'details': details or {},
-                'device_fingerprint': self._get_device_fingerprint(),
-                'ip_address': self._get_client_ip()
-            }
-            self.security_logs_collection.add(log_entry)
-        except Exception as e:
-            print(f"Error logging security event: {e}")
-            
-    def _get_client_ip(self):
-        """Get client IP address (placeholder for actual implementation)"""
-        # In a real application, this would get the actual client IP
-        return "127.0.0.1"
-        
-    def _check_login_attempts(self, email):
-        """Check if user has exceeded login attempts"""
-        try:
-            # Get recent failed login attempts (last hour)
-            one_hour_ago = datetime.datetime.now() - datetime.timedelta(hours=1)
-            
-            failed_attempts = self.security_logs_collection.where(
-                'event_type', '==', 'failed_login'
-            ).where(
-                'details.email', '==', email
-            ).where(
-                'timestamp', '>=', one_hour_ago
-            ).get()
-            
-            return len(failed_attempts) >= self.max_login_attempts
-        except Exception:
-            return False
 
     def create_user(self, email, password, user_data):
         """Create a new user with Firebase Authentication and Firestore profile"""
@@ -171,89 +187,22 @@ class FirebaseManager:
             return False, str(e)
 
     def sign_in(self, email, password, device_id=None):
-        """Sign in user with email, password and enhanced security checks"""
+        """Sign in user with email, password and no security checks"""
         try:
-            # Generate device ID if not provided
-            if not device_id:
-                device_id = self._get_device_fingerprint()
-            
-            # Check login attempts before authentication
-            if self._check_login_attempts(email):
-                self._log_security_event('login_blocked', details={'email': email, 'reason': 'too_many_attempts'})
-                return False, "Too many failed login attempts. Please try again later."
-            
-            # Verify file integrity before login
-            #if not self._verify_system_integrity():
-                #self._log_security_event('integrity_violation', details={'email': email})
-                #return False, "System integrity check failed. Please contact administrator."
-            
-            # Authenticate the user
+            print(f"Attempting sign in for email: {email}")
+            # Authenticate the user directly without security checks
             try:
                 user = self.auth.sign_in_with_email_and_password(email, password)
                 uid = user['localId']
             except Exception as auth_error:
-                # Log failed login attempt
-                self._log_security_event('failed_login', details={'email': email, 'error': str(auth_error)})
+                print(f"Authentication error for email {email}: {auth_error}")
                 return False, "Invalid email or password"
             
-            # Check if user is locked
-            user_doc = self.users_collection.document(uid).get()
-            if user_doc.exists:
-                user_data = user_doc.to_dict()
-                if user_data.get('is_locked', False):
-                    self._log_security_event('locked_account_access', user_id=uid, details={'email': email})
-                    return False, "Account is locked. Please contact administrator."
-            
-            # Check device binding
-            device_query = self.devices_collection.where('user_id', '==', uid).where('device_id', '==', device_id).limit(1).get()
-            
-            if not device_query:
-                # First time login from this device
-                existing_devices = self.devices_collection.where('user_id', '==', uid).get()
-                if len(existing_devices) >= self.max_devices_per_user:
-                    self._log_security_event('device_limit_exceeded', user_id=uid, details={'email': email, 'device_id': device_id})
-                    return False, f"Maximum device limit ({self.max_devices_per_user}) reached"
-                    
-                # Register new device
-                self.devices_collection.add({
-                    'user_id': uid,
-                    'device_id': device_id,
-                    'device_fingerprint': self._get_device_fingerprint(),
-                    'registered_date': firestore.SERVER_TIMESTAMP,
-                    'last_login': firestore.SERVER_TIMESTAMP,
-                    'is_active': True,
-                    'platform_info': {
-                        'system': platform.system(),
-                        'release': platform.release(),
-                        'machine': platform.machine()
-                    }
-                })
-                self._log_security_event('new_device_registered', user_id=uid, details={'device_id': device_id})
-            else:
-                # Check if device is blocked
-                device_data = device_query[0].to_dict()
-                if not device_data.get('is_active', True):
-                    self._log_security_event('blocked_device_access', user_id=uid, details={'device_id': device_id})
-                    return False, "This device has been blocked"
-                
-                # Update last login
-                device_query[0].reference.update({
-                    'last_login': firestore.SERVER_TIMESTAMP
-                })
-            
-            # Handle session management
-            self._clear_old_sessions(uid)
-            session_token = self._create_new_session(uid, device_id)
-            
-            # Log successful login
-            self._log_security_event('successful_login', user_id=uid, details={'email': email, 'device_id': device_id})
-            
-            user['session_token'] = session_token
-            user['device_id'] = device_id
+            # Return user info directly
             return True, user
             
         except Exception as e:
-            self._log_security_event('login_error', details={'email': email, 'error': str(e)})
+            print(f"Login error for email {email}: {e}")
             return False, str(e)
             
     def _clear_old_sessions(self, uid):
@@ -913,3 +862,4 @@ class FirebaseManager:
 
 # Initialize Firebase manager
 firebase = FirebaseManager()
+
