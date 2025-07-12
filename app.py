@@ -1,13 +1,15 @@
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for
+import datetime
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, flash
 from firebase_config import firebase  # Import your firebase manager
 import firebase_admin
-from firebase_admin import firestore # <-- 1. IMPORT FIREBASE ADMIN AND FIRESTORE
+from firebase_admin import firestore
 import hmac
 import hashlib
 import os
 import uuid
 import traceback
 import logging
+import requests
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)
@@ -29,46 +31,72 @@ def render_homepage():
     """Renders the main homepage."""
     return render_template('index.html')
 
-# In app.py
-
 @app.route("/login", methods=['GET', 'POST'])
 def login():
+    """Handles user login."""
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
-        
-        # ADD THIS LOG
-        app.logger.info(f"--- Attempting login for: {email} ---")
-        
         try:
-            # Note: Changed 'user' to 'user_or_error' for clarity
-            success, user_or_error = firebase.sign_in(email, password)
-            
+            # Use unified sign_in method
+            success, user = firebase.sign_in(email, password)
+            print(f"Login attempt for {email}, success: {success}, user: {user}")
             if not success:
-                # ADD THIS LOG
-                app.logger.error(f"Login failed. Reason from firebase.sign_in: {user_or_error}")
-                return render_template('login.html', error=user_or_error)
+                return render_template('login.html', error=user)
             
-            # If successful, user_or_error is the user object
-            user_id = user_or_error['localId']
-            app.logger.info(f"Firebase Auth successful for UID: {user_id}")
+            # Store user token dict in session as 'user_token'
+            session['user_token'] = user
             
-            user_profile_doc = firebase.db.collection('users').document(user_id).get()
-            if user_profile_doc.exists:
-                user_data = user_profile_doc.to_dict()
-                session['user'] = user_data
-                app.logger.info(f"Firestore profile found. Redirecting to dashboard.")
-                return redirect(url_for('dashboard'))
+            # Fetch user profile and store in session
+            uid = user['localId']
+            success_profile, user_profile = firebase.get_user_profile(uid)
+            if success_profile:
+                session['user'] = user_profile
             else:
-                # ADD THIS LOG
-                app.logger.error(f"Firestore profile not found for UID: {user_id}")
-                return render_template('login.html', error="User profile not found.")
-        except Exception as e:
-            # ADD THIS LOG
-            app.logger.error(f"An unexpected exception occurred during login: {e}", exc_info=True)
-            return render_template('login.html', error="Invalid email or password.")
+                session['user'] = {}
             
-    return render_template('login.html')
+            flash('Login successful!', 'success')
+            return redirect(url_for('dashboard'))
+        except Exception as e:
+            print(f"Exception during login for {email}: {e}")
+            return render_template('login.html', error="Invalid email or password.")
+    else:
+        # GET request
+        return render_template('login.html')
+
+from flask import request, jsonify
+
+@app.route("/forgot_password", methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email')
+    if not email:
+        return jsonify({"error": "Please enter your email address."}), 400
+    # Implement validate_email here since FirebaseManager lacks it
+    import re
+    def validate_email(email):
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return re.match(pattern, email) is not None
+
+    if not validate_email(email):
+        return jsonify({"error": "Please enter a valid email address."}), 400
+    try:
+        # Check if user exists before sending reset link
+        user_query = firebase.db.collection('users').where('email', '==', email).limit(1).get()
+        if not user_query:
+            return jsonify({"error": "User not registered with this email address."}), 400
+
+        firebase.auth.send_password_reset_email(email)
+        # On success, redirect to login page
+        return jsonify({"message": "Password reset link sent to your email!", "redirect": "/login"}), 200
+    except Exception as e:
+        error_msg = str(e)
+        if "EMAIL_NOT_FOUND" in error_msg:
+            return jsonify({"error": "No account found with this email address."}), 400
+        elif "INVALID_EMAIL" in error_msg:
+            return jsonify({"error": "Invalid email address."}), 400
+        else:
+            return jsonify({"error": "Failed to send reset link. Please try again."}), 500
 
 @app.route("/register", methods=['GET', 'POST'])
 def register():
@@ -78,25 +106,33 @@ def register():
         password = request.form['password']
         name = request.form['name']
         mobile = request.form['mobile']
-        try:
-            user = firebase_admin.auth.create_user(email=email, password=password, display_name=name)
-            user_data = {
-                "uid": user.uid,
-                "email": email,
-                "name": name,
-                "mobile": mobile,
-                "is_activated": False,
-                "credits": 0,
-                "status": "Registered",
-                "registered_on": firestore.SERVER_TIMESTAMP
-            }
-            firebase.db.collection('users').document(user.uid).set(user_data)
-            return redirect(url_for('login'))
-        except Exception as e:
-            error_message = str(e)
-            if 'EMAIL_EXISTS' in error_message:
-                return render_template('register.html', error="This email address is already in use.")
-            return render_template('register.html', error="Registration failed.")
+        user_data = {
+            "name": name,
+            "mobile": mobile,
+            "registered_on": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "is_activated": False,
+            "is_admin": False,
+            "activation_key": "",
+            "subscription_start": "",
+            "subscription_end": "",
+            "status": "Registered"
+        }
+        success, result = firebase.create_user(email, password, user_data)
+        if success:
+            # Try to sign in the user immediately after registration to verify credentials
+            sign_in_success, sign_in_result = firebase.sign_in(email, password)
+            if sign_in_success:
+                flash('Congratulations! Registration successful. You are now logged in.', 'success')
+                session['user'] = sign_in_result
+                return redirect(url_for('dashboard'))
+            else:
+                flash('Registration successful but automatic login failed. Please login manually.', 'warning')
+                return redirect(url_for('login'))
+        else:
+            error = result
+            if 'EMAIL_EXISTS' in error:
+                error = "This email address is already in use."
+            return render_template('register.html', error=error)
     return render_template('register.html')
 
 @app.route("/dashboard")
@@ -118,10 +154,43 @@ def dashboard():
             return render_template('dashboard.html', user=user_data)
     return redirect(url_for('login'))
 
+@app.route("/change_password", methods=['GET', 'POST'])
+def change_password():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        old_password = request.form.get('old_password')
+        new_password = request.form.get('new_password')
+        user_token = session.get('user_token')
+        email = user_token.get('email') if user_token else None
+        
+        if not email:
+            return redirect(url_for('login'))
+        
+        # Verify old password by attempting sign in
+        success, result = firebase.sign_in(email, old_password)
+        if not success:
+            error = "Old password is incorrect."
+            return render_template('change_password.html', error=error)
+        
+        # Update password using Firebase Admin SDK
+        try:
+            user_id = user_token.get('localId')
+            firebase_admin.auth.update_user(user_id, password=new_password)
+            message = "Password changed successfully."
+            return render_template('change_password.html', message=message)
+        except Exception as e:
+            error = f"Failed to change password: {str(e)}"
+            return render_template('change_password.html', error=error)
+    
+    return render_template('change_password.html')
+
 @app.route("/logout")
 def logout():
     """Logs the user out."""
     session.pop('user', None)
+    flash('You have been logged out.', 'info')
     return redirect(url_for('render_homepage'))
 
 # --- API and Webhook Routes ---
