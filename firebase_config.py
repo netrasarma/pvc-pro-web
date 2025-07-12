@@ -6,6 +6,7 @@ import uuid
 import datetime
 import platform
 import os
+from google.cloud import secretmanager
 
 # Firebase web app configuration
 FIREBASE_CONFIG = {
@@ -22,7 +23,20 @@ class FirebaseManager:
     def __init__(self):
         # Initialize Firebase Admin SDK
         try:
-            cred = credentials.Certificate("firebase-adminsdk.json")
+            # --- NEW CODE TO FETCH FROM SECRET MANAGER ---
+            # Replace with your project ID and secret name
+            PROJECT_ID = "pvc-maker"
+            SECRET_NAME = "firebase-key"
+        
+            client = secretmanager.SecretManagerServiceClient()
+            secret_path = f"projects/{PROJECT_ID}/secrets/{SECRET_NAME}/versions/latest"
+            response = client.access_secret_version(request={"name": secret_path})
+        
+            # Decode the secret payload and load it as a dictionary
+            secret_data = json.loads(response.payload.data.decode("UTF-8"))
+        
+            # Initialize Firebase with the fetched credentials
+            cred = credentials.Certificate(secret_data)
             firebase_admin.initialize_app(cred)
         except Exception as e:
             print(f"Error initializing Firebase Admin SDK: {e}")
