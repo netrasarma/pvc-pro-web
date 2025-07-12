@@ -36,7 +36,11 @@ def login():
         email = request.form['email']
         password = request.form['password']
         try:
-            user = firebase.auth.sign_in_with_email_and_password(email, password)
+            # Use unified sign_in method
+            success, user = firebase.sign_in(email, password)
+            if not success:
+                return render_template('login.html', error=user)
+            
             user_profile_doc = firebase.db.collection('users').document(user['localId']).get()
             if user_profile_doc.exists:
                 user_data = user_profile_doc.to_dict()
@@ -84,8 +88,16 @@ def dashboard():
         user_id = session['user']['uid']
         user_profile_doc = firebase.db.collection('users').document(user_id).get()
         if user_profile_doc.exists:
-            session['user'] = user_profile_doc.to_dict()
-            return render_template('dashboard.html', user=session['user'])
+            user_data = user_profile_doc.to_dict()
+            session['user'] = user_data
+            
+            # Check if user is locked and show message on dashboard
+            if user_data.get('is_locked', False):
+                admin_contact = "officialnetrasarma@gmail.com"
+                lock_message = f"Your account is locked. Please contact admin at {admin_contact} to unlock."
+                return render_template('dashboard.html', user=user_data, lock_message=lock_message)
+            
+            return render_template('dashboard.html', user=user_data)
     return redirect(url_for('login'))
 
 @app.route("/logout")
