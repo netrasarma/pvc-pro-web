@@ -31,9 +31,175 @@
             </div>
         </div>
         
-        <div class="mt-8 text-center">
-            <a href="/" class="px-6 py-3 text-white bg-blue-600 rounded-md hover:bg-blue-700">Back to Homepage</a>
+        <div class="mt-8 text-center space-x-4">
+            {% if not user.is_activated %}
+            <button onclick="initiatePurchase('Annual Subscription - ₹699/year', 699)" class="px-6 py-3 text-white bg-green-600 rounded-md hover:bg-green-700">Buy Annual Plan</button>
+            {% endif %}
+            <button onclick="showRechargeAmountInput()" class="px-6 py-3 text-white bg-blue-600 rounded-md hover:bg-blue-700">Recharge Credits</button>
+            <a href="{{ url_for('change_password') }}" class="px-6 py-3 text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Change Password</a>
+            <a href="/" class="px-6 py-3 text-white bg-gray-600 rounded-md hover:bg-gray-700">Back to Homepage</a>
         </div>
+
+        <!-- Recharge Amount Input Modal -->
+        <div id="rechargeAmountModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden payment-modal">
+            <div class="bg-white rounded-lg max-w-md w-full mx-4 p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-semibold">Enter Recharge Amount</h3>
+                    <button onclick="hideRechargeAmountInput()" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <form id="recharge-amount-form">
+                    <label for="recharge-amount" class="block text-gray-700 mb-2">Amount (₹)</label>
+                    <input type="number" id="recharge-amount" min="100" step="1" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter amount (minimum ₹100)" required>
+                    <div class="mt-6 flex justify-end space-x-4">
+                        <button type="button" onclick="hideRechargeAmountInput()" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
+                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Proceed</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Payment Modal -->
+        <div id="paymentModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden payment-modal">
+            <div class="bg-white rounded-lg max-w-md w-full mx-4 p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-semibold">Complete Your Purchase</h3>
+                    <button onclick="hidePaymentForm()" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <p class="mb-4">You're purchasing: <span id="selectedPlan" class="font-semibold">Annual Subscription - ₹699/year</span></p>
+                <p class="mb-6">Total: ₹<span id="planPrice">699</span></p>
+                
+                <form id="payment-form">
+                    <div class="mb-4">
+                        <label for="payment-name" class="block text-gray-700 mb-2">Full Name</label>
+                        <input type="text" id="payment-name" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Your full name" required>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="payment-email" class="block text-gray-700 mb-2">Email</label>
+                        <input type="email" id="payment-email" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="your@email.com" required>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="payment-phone" class="block text-gray-700 mb-2">Phone Number</label>
+                        <input type="tel" id="payment-phone" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter your phone number" required>
+                    </div>
+
+                    <button id="cf-pay-button" type="button" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-semibold flex items-center justify-center">
+                        <span id="button-text">Pay ₹<span id="payment-amount">699</span></span>
+                    </button>
+                </form>
+                
+                <p class="text-xs text-gray-500 mt-4">Your payment is secure and encrypted. By purchasing, you agree to our <a href="{{ url_for('static', filename='terms.html') }}" class="text-blue-500 hover:underline">Terms</a> and <a href="{{ url_for('static', filename='privacy.html') }}" class="text-blue-500 hover:underline">Privacy Policy</a>.</p>
+            </div>
+        </div>
+
+        <script>
+            const userLoggedIn = true;  // Assuming user is logged in on dashboard page
+
+            function showRechargeAmountInput() {
+                document.getElementById('rechargeAmountModal').classList.remove('hidden');
+                document.getElementById('recharge-amount').value = '';
+            }
+
+            function hideRechargeAmountInput() {
+                document.getElementById('rechargeAmountModal').classList.add('hidden');
+            }
+
+            document.getElementById('recharge-amount-form').addEventListener('submit', function (e) {
+                e.preventDefault();
+                const amountInput = document.getElementById('recharge-amount');
+                const amount = parseInt(amountInput.value, 10);
+                if (isNaN(amount) || amount < 100) {
+                    alert('Please enter a valid amount of at least ₹100.');
+                    return;
+                }
+                hideRechargeAmountInput();
+                initiatePurchase(amount + ' Credits', amount);
+            });
+
+            function showPaymentForm(planName, amount) {
+                document.getElementById('selectedPlan').textContent = planName;
+                document.getElementById('planPrice').textContent = amount;
+                document.getElementById('payment-amount').textContent = amount;
+
+                // Pre-fill user details if logged in
+                document.getElementById('payment-name').value = "{{ user.get('name', '') }}";
+                document.getElementById('payment-email').value = "{{ user.get('email', '') }}";
+                document.getElementById('payment-phone').value = "{{ user.get('mobile', '') }}";
+
+                document.getElementById('paymentModal').classList.remove('hidden');
+            }
+
+            function hidePaymentForm() {
+                document.getElementById('paymentModal').classList.add('hidden');
+            }
+
+            function initiatePurchase(planName, amount) {
+                if (!userLoggedIn) {
+                    alert("Please log in or register to make a purchase.");
+                    window.location.href = '/login';
+                    return;
+                }
+
+                showPaymentForm(planName, amount);
+            }
+
+            // Cashfree payment integration
+            document.getElementById('cf-pay-button').addEventListener('click', async function () {
+                const amount = parseFloat(document.getElementById('planPrice').textContent);
+
+                async function fetchPaymentSessionId() {
+                    try {
+                        const backendUrl = '/create_order';
+                        const response = await fetch(backendUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                order_amount: amount,
+                                order_note: document.getElementById('selectedPlan').textContent
+                            })
+                        });
+
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Server error');
+                        }
+                        return data.paymentSessionId;
+                    } catch (error) {
+                        console.error('Error fetching payment session ID:', error);
+                        alert(`Could not initiate payment. ${error.message}`);
+                        return null;
+                    }
+                }
+
+                const paymentSessionId = await fetchPaymentSessionId();
+
+                if (!paymentSessionId) {
+                    return;
+                }
+
+                const cashfree = new Cashfree({
+                    mode: "production"
+                });
+                const checkoutOptions = {
+                    paymentSessionId: paymentSessionId
+                };
+                cashfree.checkout(checkoutOptions).then((result) => {
+                    if (result.error) {
+                        alert(result.error.message);
+                    }
+                });
+            });
+        </script>
     </div>
 </body>
 </html>
