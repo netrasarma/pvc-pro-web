@@ -29,27 +29,45 @@ def render_homepage():
     """Renders the main homepage."""
     return render_template('index.html')
 
+# In app.py
+
 @app.route("/login", methods=['GET', 'POST'])
 def login():
-    """Handles user login."""
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
+        
+        # ADD THIS LOG
+        app.logger.info(f"--- Attempting login for: {email} ---")
+        
         try:
-            # Use unified sign_in method
-            success, user = firebase.sign_in(email, password)
-            if not success:
-                return render_template('login.html', error=user)
+            # Note: Changed 'user' to 'user_or_error' for clarity
+            success, user_or_error = firebase.sign_in(email, password)
             
-            user_profile_doc = firebase.db.collection('users').document(user['localId']).get()
+            if not success:
+                # ADD THIS LOG
+                app.logger.error(f"Login failed. Reason from firebase.sign_in: {user_or_error}")
+                return render_template('login.html', error=user_or_error)
+            
+            # If successful, user_or_error is the user object
+            user_id = user_or_error['localId']
+            app.logger.info(f"Firebase Auth successful for UID: {user_id}")
+            
+            user_profile_doc = firebase.db.collection('users').document(user_id).get()
             if user_profile_doc.exists:
                 user_data = user_profile_doc.to_dict()
                 session['user'] = user_data
+                app.logger.info(f"Firestore profile found. Redirecting to dashboard.")
                 return redirect(url_for('dashboard'))
             else:
+                # ADD THIS LOG
+                app.logger.error(f"Firestore profile not found for UID: {user_id}")
                 return render_template('login.html', error="User profile not found.")
-        except Exception:
+        except Exception as e:
+            # ADD THIS LOG
+            app.logger.error(f"An unexpected exception occurred during login: {e}", exc_info=True)
             return render_template('login.html', error="Invalid email or password.")
+            
     return render_template('login.html')
 
 @app.route("/register", methods=['GET', 'POST'])
