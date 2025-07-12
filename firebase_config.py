@@ -20,34 +20,38 @@ FIREBASE_CONFIG = {
 
 class FirebaseManager:
     def __init__(self):
-        # Initialize Firebase Admin SDK
         import json
+        self.firebase_admin_initialized = False
         try:
             firebase_adminsdk_json = os.getenv("FIREBASE_ADMINSDK_JSON")
             if firebase_adminsdk_json:
+                print(f"FIREBASE_ADMINSDK_JSON environment variable found with length: {len(firebase_adminsdk_json)}")
                 try:
                     cred_dict = json.loads(firebase_adminsdk_json)
                     cred = credentials.Certificate(cred_dict)
                     firebase_admin.initialize_app(cred)
+                    self.firebase_admin_initialized = True
+                    print("Firebase Admin SDK initialized successfully from environment variable.")
                 except Exception as inner_e:
                     print(f"Error initializing Firebase Admin SDK from environment variable: {inner_e}")
                     raise inner_e
             else:
+                print("FIREBASE_ADMINSDK_JSON environment variable not found, trying local file.")
                 cred = credentials.Certificate("firebase-adminsdk.json")
                 firebase_admin.initialize_app(cred)
+                self.firebase_admin_initialized = True
+                print("Firebase Admin SDK initialized successfully from local file.")
         except Exception as e:
             print(f"Error initializing Firebase Admin SDK: {e}")
             if not os.getenv("FIREBASE_ADMINSDK_JSON"):
                 print("Please ensure firebase-adminsdk.json is present in the directory or set FIREBASE_ADMINSDK_JSON environment variable")
             return
 
-        # Initialize Pyrebase for client-side operations
         try:
             self.pb = pyrebase.initialize_app(FIREBASE_CONFIG)
             self.auth = self.pb.auth()
             self.db = firestore.client()
             
-            # Initialize collections
             self.users_collection = self.db.collection('users')
             self.devices_collection = self.db.collection('devices')
             self.sessions_collection = self.db.collection('sessions')
@@ -55,12 +59,10 @@ class FirebaseManager:
             self.security_logs_collection = self.db.collection('security_logs')
             self.admin_actions_collection = self.db.collection('admin_actions')
             
-            # Initialize max devices and login attempts
             self.max_devices_per_user = 2
             self.max_login_attempts = 5
             self.session_timeout_hours = 24
 
-            # Add missing _get_device_fingerprint method
             import platform
             import hashlib
             import uuid
@@ -71,7 +73,9 @@ class FirebaseManager:
             return
 
     def _check_login_attempts(self, email):
-        """Check if user has exceeded login attempts"""
+        if not self.firebase_admin_initialized:
+            print("Firebase Admin SDK not initialized. Cannot check login attempts.")
+            return False
         try:
             import datetime
             one_hour_ago = datetime.datetime.now() - datetime.timedelta(hours=1)
