@@ -72,6 +72,7 @@ from flask import request, jsonify
 
 @app.route("/forgot_password", methods=['POST'])
 def forgot_password():
+    import traceback
     data = request.get_json()
     email = data.get('email')
     if not email:
@@ -95,6 +96,8 @@ def forgot_password():
         return jsonify({"message": "Password reset link sent to your email!", "redirect": "/login"}), 200
     except Exception as e:
         error_msg = str(e)
+        app.logger.error(f"Password reset error for {email}: {error_msg}")
+        app.logger.error(traceback.format_exc())
         if "EMAIL_NOT_FOUND" in error_msg:
             return jsonify({"error": "No account found with this email address."}), 400
         elif "INVALID_EMAIL" in error_msg:
@@ -143,7 +146,13 @@ def register():
 def dashboard():
     """Displays the user's dashboard."""
     if 'user' in session:
-        user_id = session['user']['uid']
+        user_id = session['user'].get('uid') or session['user'].get('localId') or session['user'].get('id')
+        if not user_id:
+            # Clear session and redirect to login if user ID is missing
+            session.pop('user', None)
+            session.pop('user_token', None)
+            return redirect(url_for('login'))
+        
         user_profile_doc = firebase.db.collection('users').document(user_id).get()
         if user_profile_doc.exists:
             user_data = user_profile_doc.to_dict()
