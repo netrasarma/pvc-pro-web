@@ -5,3 +5,4 @@ gunicorn
 firebase-admin
 pyrebase4
 psutil
+google-cloud-secret-manager
