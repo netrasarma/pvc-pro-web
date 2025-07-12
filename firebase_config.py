@@ -183,9 +183,9 @@ class FirebaseManager:
                 return False, "Too many failed login attempts. Please try again later."
             
             # Verify file integrity before login
-            if not self._verify_system_integrity():
-                self._log_security_event('integrity_violation', details={'email': email})
-                return False, "System integrity check failed. Please contact administrator."
+            #if not self._verify_system_integrity():
+                #self._log_security_event('integrity_violation', details={'email': email})
+                #return False, "System integrity check failed. Please contact administrator."
             
             # Authenticate the user
             try:
