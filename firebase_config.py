@@ -25,11 +25,16 @@ class FirebaseManager:
         try:
             firebase_adminsdk_json = os.getenv("FIREBASE_ADMINSDK_JSON")
             if firebase_adminsdk_json:
-                cred_dict = json.loads(firebase_adminsdk_json)
-                cred = credentials.Certificate(cred_dict)
+                try:
+                    cred_dict = json.loads(firebase_adminsdk_json)
+                    cred = credentials.Certificate(cred_dict)
+                    firebase_admin.initialize_app(cred)
+                except Exception as inner_e:
+                    print(f"Error initializing Firebase Admin SDK from environment variable: {inner_e}")
+                    raise inner_e
             else:
                 cred = credentials.Certificate("firebase-adminsdk.json")
-            firebase_admin.initialize_app(cred)
+                firebase_admin.initialize_app(cred)
         except Exception as e:
             print(f"Error initializing Firebase Admin SDK: {e}")
             if not os.getenv("FIREBASE_ADMINSDK_JSON"):
@@ -862,4 +867,3 @@ class FirebaseManager:
 
 # Initialize Firebase manager
 firebase = FirebaseManager()
-
