@@ -26,3 +26,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # This command can now find app.py because it's in /app
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]
+
+COPY firebase-adminsdk.json .
