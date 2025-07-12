@@ -48,7 +48,11 @@ def login():
             session['user_token'] = user
             
             # Fetch user profile and store in session
-            uid = user['localId']
+            uid = user.get('localId') or user.get('local_id') or user.get('userId')
+            if not uid:
+                print(f"UID not found in user token for {email}: {user}")
+                return render_template('login.html', error="Login failed: User ID not found.")
+            
             success_profile, user_profile = firebase.get_user_profile(uid)
             if success_profile:
                 session['user'] = user_profile
