@@ -23,28 +23,37 @@ class FirebaseManager:
         import json
         self.firebase_admin_initialized = False
         try:
-            firebase_adminsdk_json = os.getenv("FIREBASE_ADMINSDK_JSON")
-            if firebase_adminsdk_json:
-                print(f"FIREBASE_ADMINSDK_JSON environment variable found with length: {len(firebase_adminsdk_json)}")
-                try:
-                    cred_dict = json.loads(firebase_adminsdk_json)
-                    cred = credentials.Certificate(cred_dict)
-                    firebase_admin.initialize_app(cred)
-                    self.firebase_admin_initialized = True
-                    print("Firebase Admin SDK initialized successfully from environment variable.")
-                except Exception as inner_e:
-                    print(f"Error initializing Firebase Admin SDK from environment variable: {inner_e}")
-                    raise inner_e
-            else:
-                print("FIREBASE_ADMINSDK_JSON environment variable not found, trying local file.")
-                cred = credentials.Certificate("firebase-adminsdk.json")
+            # Try to initialize from mounted file path first
+            mounted_path = os.getenv("FIREBASE_ADMINSDK_MOUNT_PATH")
+            if mounted_path and os.path.exists(mounted_path):
+                print(f"Found mounted Firebase Admin SDK JSON file at: {mounted_path}")
+                cred = credentials.Certificate(mounted_path)
                 firebase_admin.initialize_app(cred)
                 self.firebase_admin_initialized = True
-                print("Firebase Admin SDK initialized successfully from local file.")
+                print("Firebase Admin SDK initialized successfully from mounted file.")
+            else:
+                firebase_adminsdk_json = os.getenv("FIREBASE_ADMINSDK_JSON")
+                if firebase_adminsdk_json:
+                    print(f"FIREBASE_ADMINSDK_JSON environment variable found with length: {len(firebase_adminsdk_json)}")
+                    try:
+                        cred_dict = json.loads(firebase_adminsdk_json)
+                        cred = credentials.Certificate(cred_dict)
+                        firebase_admin.initialize_app(cred)
+                        self.firebase_admin_initialized = True
+                        print("Firebase Admin SDK initialized successfully from environment variable.")
+                    except Exception as inner_e:
+                        print(f"Error initializing Firebase Admin SDK from environment variable: {inner_e}")
+                        raise inner_e
+                else:
+                    print("FIREBASE_ADMINSDK_JSON environment variable not found, trying local file.")
+                    cred = credentials.Certificate("firebase-adminsdk.json")
+                    firebase_admin.initialize_app(cred)
+                    self.firebase_admin_initialized = True
+                    print("Firebase Admin SDK initialized successfully from local file.")
         except Exception as e:
             print(f"Error initializing Firebase Admin SDK: {e}")
-            if not os.getenv("FIREBASE_ADMINSDK_JSON"):
-                print("Please ensure firebase-adminsdk.json is present in the directory or set FIREBASE_ADMINSDK_JSON environment variable")
+            if not os.getenv("FIREBASE_ADMINSDK_JSON") and not os.getenv("FIREBASE_ADMINSDK_MOUNT_PATH"):
+                print("Please ensure firebase-adminsdk.json is present in the directory or set FIREBASE_ADMINSDK_JSON or FIREBASE_ADMINSDK_MOUNT_PATH environment variable")
             return
 
         try:
