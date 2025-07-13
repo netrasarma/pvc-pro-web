@@ -812,7 +812,11 @@
                     alert(result.error.message);
                 } else {
                     // On successful payment, redirect to dashboard and refresh credits
-                    window.location.href = '/dashboard';
+                    // Note: Cashfree checkout returns a promise that resolves when checkout is closed
+                    // We should not redirect immediately here, but listen for payment success via webhook or client-side polling
+                    // For now, just close the payment modal
+                    hidePaymentForm();
+                    // Optionally, show a message or refresh credits via polling
                 }
             });
         });
