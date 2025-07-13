@@ -243,8 +243,8 @@
                         console.error("Cashfree checkout error:", result.error);
                         alert(result.error.message);
                     } else {
-                        console.log("Cashfree checkout success. Redirecting.");
-                        window.location.href = '/dashboard';
+                        console.log("Cashfree checkout success. Closing modal.");
+                        hidePaymentForm();
                     }
                 });
             });
