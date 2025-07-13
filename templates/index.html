@@ -810,6 +810,9 @@
             cashfree.checkout(checkoutOptions).then((result) => {
                 if (result.error) {
                     alert(result.error.message);
+                } else {
+                    // On successful payment, redirect to dashboard and refresh credits
+                    window.location.href = '/dashboard';
                 }
             });
         });
