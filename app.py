@@ -246,7 +246,8 @@ def create_order():
             "internal_user_id": user_id
         }
     }
-
+    #DEBUG LINE
+    app.logger.info(f"Sending data to Cashfree: {order_data}")
     try:
         response = requests.post(CASHFREE_URL, headers=HEADERS, json=order_data)
         response.raise_for_status()
