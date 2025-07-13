@@ -135,125 +135,120 @@
         </div>
 
         <script>
-        const userLoggedIn = {{ 'true' if session.get('user') else 'false' }};
-
-        function showRechargeAmountInput() {
-            document.getElementById('rechargeAmountModal').classList.remove('hidden');
-            document.getElementById('recharge-amount').value = '';
-        }
-
-        function hideRechargeAmountInput() {
-            document.getElementById('rechargeAmountModal').classList.add('hidden');
-        }
-
-        document.getElementById('recharge-amount-form').addEventListener('submit', function (e) {
-            e.preventDefault();
-            const amountInput = document.getElementById('recharge-amount');
-            const amount = parseInt(amountInput.value, 10);
-            if (isNaN(amount) || amount < 100) {
-                alert('Please enter a valid amount of at least ₹100.');
-                return;
+            console.log("Page script loaded. User logged in:", {{ 'true' if session.get('user') else 'false' }});
+        
+            const userLoggedIn = {{ 'true' if session.get('user') else 'false' }};
+        
+            function showRechargeAmountInput() {
+                console.log("showRechargeAmountInput() called.");
+                document.getElementById('rechargeAmountModal').classList.remove('hidden');
+                document.getElementById('recharge-amount').value = '';
             }
-            hideRechargeAmountInput();
-            initiatePurchase(amount + ' Credits', amount);
-        });
-
-        function showPaymentForm(planName, amount) {
-            document.getElementById('selectedPlan').textContent = planName;
-            document.getElementById('planPrice').textContent = amount;
-            document.getElementById('payment-amount').textContent = amount;
-
-            // Pre-fill user details if logged in
-            {% if session.get('user') %}
-                document.getElementById('payment-name').value = "{{ session['user'].get('name', '') }}";
-                document.getElementById('payment-email').value = "{{ session['user'].get('email', '') }}";
-                document.getElementById('payment-phone').value = "{{ session['user'].get('mobile', '') }}";
-            {% else %}
-                document.getElementById('payment-name').value = "";
-                document.getElementById('payment-email').value = "";
-                document.getElementById('payment-phone').value = "";
-            {% endif %}
-
-            document.getElementById('paymentModal').classList.remove('hidden');
-        }
-
-        function hidePaymentForm() {
-            document.getElementById('paymentModal').classList.add('hidden');
-        }
-
-        function initiatePurchase(planName, amount) {
-            if (!userLoggedIn) {
-                alert("Please log in or register to make a purchase.");
-                window.location.href = '/login';
-                return;
+        
+            function hideRechargeAmountInput() {
+                console.log("hideRechargeAmountInput() called.");
+                document.getElementById('rechargeAmountModal').classList.add('hidden');
             }
-
-            if (typeof amount === 'string' && amount.includes('Credits')) {
-                // Handle pay-per-file purchase with dynamic quantity
-                const quantity = parseInt(amount.split(' ')[0], 10);
-                if (isNaN(quantity) || quantity < 1) {
-                    alert('Invalid quantity for credits purchase.');
+        
+            document.getElementById('recharge-amount-form').addEventListener('submit', function (e) {
+                e.preventDefault();
+                console.log("Recharge form submitted.");
+                const amountInput = document.getElementById('recharge-amount');
+                const amount = parseInt(amountInput.value, 10);
+                if (isNaN(amount) || amount < 100) {
+                    alert('Please enter a valid amount of at least ₹100.');
                     return;
                 }
-                const pricePerFile = 1;
-                const totalAmount = quantity * pricePerFile;
-                const dynamicPlanName = quantity + ' File Credits at ₹' + pricePerFile + '/file';
-                showPaymentForm(dynamicPlanName, totalAmount);
-            } else {
+                hideRechargeAmountInput();
+                initiatePurchase(amount + ' Credits', amount);
+            });
+        
+            function showPaymentForm(planName, amount) {
+                console.log("showPaymentForm() called with:", planName, amount);
+                document.getElementById('selectedPlan').textContent = planName;
+                document.getElementById('planPrice').textContent = amount;
+                document.getElementById('payment-amount').textContent = amount;
+        
+                {% if session.get('user') %}
+                    document.getElementById('payment-name').value = "{{ session['user'].get('name', '') }}";
+                    document.getElementById('payment-email').value = "{{ session['user'].get('email', '') }}";
+                    document.getElementById('payment-phone').value = "{{ session['user'].get('mobile', '') }}";
+                {% endif %}
+        
+                document.getElementById('paymentModal').classList.remove('hidden');
+            }
+        
+            function hidePaymentForm() {
+                console.log("hidePaymentForm() called.");
+                document.getElementById('paymentModal').classList.add('hidden');
+            }
+        
+            function initiatePurchase(planName, amount) {
+                console.log("initiatePurchase() called with:", planName, amount);
+                if (!userLoggedIn) {
+                    console.log("User not logged in. Redirecting to login.");
+                    alert("Please log in or register to make a purchase.");
+                    window.location.href = '/login';
+                    return;
+                }
                 showPaymentForm(planName, amount);
             }
-        }
-
-        // Cashfree payment integration
-        document.getElementById('cf-pay-button').addEventListener('click', async function () {
-            const amount = parseFloat(document.getElementById('planPrice').textContent);
-
-            async function fetchPaymentSessionId() {
-                try {
-                    const backendUrl = '/create_order';
-                    const response = await fetch(backendUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            order_amount: amount,
-                            order_note: document.getElementById('selectedPlan').textContent
-                        })
-                    });
-
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Server error');
+        
+            document.getElementById('cf-pay-button').addEventListener('click', async function () {
+                console.log("Pay button clicked.");
+                const amount = parseFloat(document.getElementById('planPrice').textContent);
+        
+                async function fetchPaymentSessionId() {
+                    try {
+                        console.log("Fetching payment session ID for amount:", amount);
+                        const backendUrl = '/create_order';
+                        const response = await fetch(backendUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                order_amount: amount,
+                                order_note: document.getElementById('selectedPlan').textContent
+                            })
+                        });
+                        console.log("Fetch response status:", response.status);
+                        const data = await response.json();
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Server error');
+                        }
+                        console.log("Received payment session ID:", data.paymentSessionId);
+                        return data.paymentSessionId;
+                    } catch (error) {
+                        console.error('Error fetching payment session ID:', error);
+                        alert(`Could not initiate payment. ${error.message}`);
+                        return null;
                     }
-                    return data.paymentSessionId;
-                } catch (error) {
-                    console.error('Error fetching payment session ID:', error);
-                    alert(`Could not initiate payment. ${error.message}`);
-                    return null;
                 }
-            }
-
-            const paymentSessionId = await fetchPaymentSessionId();
-
-            if (!paymentSessionId) {
-                return;
-            }
-
-            const cashfree = new Cashfree({
-                mode: "production"
-            });
-            const checkoutOptions = {
-                paymentSessionId: paymentSessionId
-            };
-            cashfree.checkout(checkoutOptions).then((result) => {
-                if (result.error) {
-                    alert(result.error.message);
-                } else {
-                    // On successful payment, redirect to dashboard and refresh credits
-                    window.location.href = '/dashboard';
+        
+                const paymentSessionId = await fetchPaymentSessionId();
+        
+                if (!paymentSessionId) {
+                    console.log("No payment session ID. Aborting checkout.");
+                    return;
                 }
+        
+                console.log("Initializing Cashfree checkout.");
+                const cashfree = new Cashfree({
+                    mode: "production"
+                });
+                const checkoutOptions = {
+                    paymentSessionId: paymentSessionId
+                };
+                cashfree.checkout(checkoutOptions).then((result) => {
+                    if (result.error) {
+                        console.error("Cashfree checkout error:", result.error);
+                        alert(result.error.message);
+                    } else {
+                        console.log("Cashfree checkout success. Redirecting.");
+                        window.location.href = '/dashboard';
+                    }
+                });
             });
-        });
-        </script>
+            </script>
     </div>
 </body>
 </html>
