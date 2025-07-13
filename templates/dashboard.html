@@ -23,6 +23,7 @@
                     <p class="text-yellow-600 font-bold">TRIAL / PAY-PER-FILE</p>
                     <p class="mt-2">Purchase an annual plan to get unlimited access and an activation key.</p>
                 {% endif %}
+                <p class="mt-4"><strong>Email:</strong> {{ user.email }}</p>
             </div>
             <div class="p-6 bg-white rounded-lg shadow-md">
                 <h2 class="text-xl font-semibold mb-4">File Credits</h2>
@@ -38,6 +39,36 @@
             <button onclick="showRechargeAmountInput()" class="px-6 py-3 text-white bg-blue-600 rounded-md hover:bg-blue-700">Recharge Credits</button>
             <a href="{{ url_for('change_password') }}" class="px-6 py-3 text-white bg-yellow-600 rounded-md hover:bg-yellow-700">Change Password</a>
             <a href="/" class="px-6 py-3 text-white bg-gray-600 rounded-md hover:bg-gray-700">Back to Homepage</a>
+        </div>
+        
+        <div class="mt-12 bg-white rounded-lg shadow-md p-6 max-w-4xl mx-auto">
+            <h2 class="text-xl font-semibold mb-4">Transaction History</h2>
+            {% if transactions and transactions|length > 0 %}
+                <table class="min-w-full table-auto border-collapse border border-gray-300">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="border border-gray-300 px-4 py-2 text-left">Date</th>
+                            <th class="border border-gray-300 px-4 py-2 text-left">Type</th>
+                            <th class="border border-gray-300 px-4 py-2 text-left">Amount</th>
+                            <th class="border border-gray-300 px-4 py-2 text-left">Balance After</th>
+                            <th class="border border-gray-300 px-4 py-2 text-left">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tx in transactions %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="border border-gray-300 px-4 py-2">{{ tx.timestamp.strftime('%Y-%m-%d %H:%M:%S') if tx.timestamp else 'N/A' }}</td>
+                            <td class="border border-gray-300 px-4 py-2">{{ tx.type }}</td>
+                            <td class="border border-gray-300 px-4 py-2">{{ tx.amount }}</td>
+                            <td class="border border-gray-300 px-4 py-2">{{ tx.balance_after }}</td>
+                            <td class="border border-gray-300 px-4 py-2">{{ tx.description }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p class="text-gray-600">No transactions found.</p>
+            {% endif %}
         </div>
 
         <!-- Recharge Amount Input Modal -->
@@ -103,102 +134,121 @@
         </div>
 
         <script>
-            const userLoggedIn = true;  // Assuming user is logged in on dashboard page
+        const userLoggedIn = {{ 'true' if session.get('user') else 'false' }};
 
-            function showRechargeAmountInput() {
-                document.getElementById('rechargeAmountModal').classList.remove('hidden');
-                document.getElementById('recharge-amount').value = '';
+        function showRechargeAmountInput() {
+            document.getElementById('rechargeAmountModal').classList.remove('hidden');
+            document.getElementById('recharge-amount').value = '';
+        }
+
+        function hideRechargeAmountInput() {
+            document.getElementById('rechargeAmountModal').classList.add('hidden');
+        }
+
+        document.getElementById('recharge-amount-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            const amountInput = document.getElementById('recharge-amount');
+            const amount = parseInt(amountInput.value, 10);
+            if (isNaN(amount) || amount < 100) {
+                alert('Please enter a valid amount of at least ₹100.');
+                return;
+            }
+            hideRechargeAmountInput();
+            initiatePurchase(amount + ' Credits', amount);
+        });
+
+        function showPaymentForm(planName, amount) {
+            document.getElementById('selectedPlan').textContent = planName;
+            document.getElementById('planPrice').textContent = amount;
+            document.getElementById('payment-amount').textContent = amount;
+
+            // Pre-fill user details if logged in
+            {% if session.get('user') %}
+                document.getElementById('payment-name').value = "{{ session['user'].get('name', '') }}";
+                document.getElementById('payment-email').value = "{{ session['user'].get('email', '') }}";
+                document.getElementById('payment-phone').value = "{{ session['user'].get('mobile', '') }}";
+            {% else %}
+                document.getElementById('payment-name').value = "";
+                document.getElementById('payment-email').value = "";
+                document.getElementById('payment-phone').value = "";
+            {% endif %}
+
+            document.getElementById('paymentModal').classList.remove('hidden');
+        }
+
+        function hidePaymentForm() {
+            document.getElementById('paymentModal').classList.add('hidden');
+        }
+
+        function initiatePurchase(planName, amount) {
+            if (!userLoggedIn) {
+                alert("Please log in or register to make a purchase.");
+                window.location.href = '/login';
+                return;
             }
 
-            function hideRechargeAmountInput() {
-                document.getElementById('rechargeAmountModal').classList.add('hidden');
-            }
-
-            document.getElementById('recharge-amount-form').addEventListener('submit', function (e) {
-                e.preventDefault();
-                const amountInput = document.getElementById('recharge-amount');
-                const amount = parseInt(amountInput.value, 10);
-                if (isNaN(amount) || amount < 100) {
-                    alert('Please enter a valid amount of at least ₹100.');
+            if (typeof amount === 'string' && amount.includes('Credits')) {
+                // Handle pay-per-file purchase with dynamic quantity
+                const quantity = parseInt(amount.split(' ')[0], 10);
+                if (isNaN(quantity) || quantity < 1) {
+                    alert('Invalid quantity for credits purchase.');
                     return;
                 }
-                hideRechargeAmountInput();
-                initiatePurchase(amount + ' Credits', amount);
-            });
-
-            function showPaymentForm(planName, amount) {
-                document.getElementById('selectedPlan').textContent = planName;
-                document.getElementById('planPrice').textContent = amount;
-                document.getElementById('payment-amount').textContent = amount;
-
-                // Pre-fill user details if logged in
-                document.getElementById('payment-name').value = "{{ user.get('name', '') }}";
-                document.getElementById('payment-email').value = "{{ user.get('email', '') }}";
-                document.getElementById('payment-phone').value = "{{ user.get('mobile', '') }}";
-
-                document.getElementById('paymentModal').classList.remove('hidden');
-            }
-
-            function hidePaymentForm() {
-                document.getElementById('paymentModal').classList.add('hidden');
-            }
-
-            function initiatePurchase(planName, amount) {
-                if (!userLoggedIn) {
-                    alert("Please log in or register to make a purchase.");
-                    window.location.href = '/login';
-                    return;
-                }
-
+                const pricePerFile = 1;
+                const totalAmount = quantity * pricePerFile;
+                const dynamicPlanName = quantity + ' File Credits at ₹' + pricePerFile + '/file';
+                showPaymentForm(dynamicPlanName, totalAmount);
+            } else {
                 showPaymentForm(planName, amount);
             }
+        }
 
-            // Cashfree payment integration
-            document.getElementById('cf-pay-button').addEventListener('click', async function () {
-                const amount = parseFloat(document.getElementById('planPrice').textContent);
+        // Cashfree payment integration
+        document.getElementById('cf-pay-button').addEventListener('click', async function () {
+            const amount = parseFloat(document.getElementById('planPrice').textContent);
 
-                async function fetchPaymentSessionId() {
-                    try {
-                        const backendUrl = '/create_order';
-                        const response = await fetch(backendUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                order_amount: amount,
-                                order_note: document.getElementById('selectedPlan').textContent
-                            })
-                        });
+            async function fetchPaymentSessionId() {
+                try {
+                    const backendUrl = '/create_order';
+                    const response = await fetch(backendUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            order_amount: amount,
+                            order_note: document.getElementById('selectedPlan').textContent
+                        })
+                    });
 
-                        const data = await response.json();
-                        if (!response.ok) {
-                            throw new Error(data.error || 'Server error');
-                        }
-                        return data.paymentSessionId;
-                    } catch (error) {
-                        console.error('Error fetching payment session ID:', error);
-                        alert(`Could not initiate payment. ${error.message}`);
-                        return null;
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Server error');
                     }
+                    return data.paymentSessionId;
+                } catch (error) {
+                    console.error('Error fetching payment session ID:', error);
+                    alert(`Could not initiate payment. ${error.message}`);
+                    return null;
                 }
+            }
 
-                const paymentSessionId = await fetchPaymentSessionId();
+            const paymentSessionId = await fetchPaymentSessionId();
 
-                if (!paymentSessionId) {
-                    return;
-                }
+            if (!paymentSessionId) {
+                return;
+            }
 
-                const cashfree = new Cashfree({
-                    mode: "production"
-                });
-                const checkoutOptions = {
-                    paymentSessionId: paymentSessionId
-                };
-                cashfree.checkout(checkoutOptions).then((result) => {
-                    if (result.error) {
-                        alert(result.error.message);
-                    }
-                });
+            const cashfree = new Cashfree({
+                mode: "production"
             });
+            const checkoutOptions = {
+                paymentSessionId: paymentSessionId
+            };
+            cashfree.checkout(checkoutOptions).then((result) => {
+                if (result.error) {
+                    alert(result.error.message);
+                }
+            });
+        });
         </script>
     </div>
 </body>
