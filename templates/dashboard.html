@@ -112,11 +112,7 @@
                 <p class="text-gray-600">No transactions found.</p>
             {% endif %}
         </div>
-        <footer class="bg-gray-800 text-white py-12 mt-auto">
-            <div class="container mx-auto px-6 text-center">
-                <p>© 2025 PVC Pro. All rights reserved.</p>
-        </div>
-        </footer>
+        
         <!-- Recharge Amount Input Modal -->
         <div id="rechargeAmountModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden payment-modal">
             <div class="bg-white rounded-lg max-w-md w-full mx-4 p-6">
@@ -178,7 +174,11 @@
                 <p class="text-xs text-gray-500 mt-4">Your payment is secure and encrypted. By purchasing, you agree to our <a href="{{ url_for('static', filename='terms.html') }}" class="text-blue-500 hover:underline">Terms</a> and <a href="{{ url_for('static', filename='privacy.html') }}" class="text-blue-500 hover:underline">Privacy Policy</a>.</p>
             </div>
         </div>
-
+        <footer class="bg-gray-800 text-white py-12 mt-auto">
+            <div class="container mx-auto px-6 text-center">
+                <p>© 2025 PVC Pro. All rights reserved.</p>
+            </div>
+        </footer>
         <script>
             console.log("Page script loaded. User logged in:", {{ 'true' if session.get('user') else 'false' }});
         
