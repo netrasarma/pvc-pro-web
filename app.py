@@ -240,7 +240,7 @@ def create_order():
             "customer_name": session['user']['name']
         },
         "order_meta": {
-             "notify_url": url_for('cashfree_webhook', _external=True)
+             "notify_url": url_for('cashfree_webhook', _external=True, _scheme='https')
         },
         "order_tags": {
             "internal_user_id": user_id
