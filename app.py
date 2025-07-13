@@ -158,13 +158,23 @@ def dashboard():
             user_data = user_profile_doc.to_dict()
             session['user'] = user_data
             
+            # Fetch user's credit transaction history
+            try:
+                transactions_query = firebase.db.collection('credit_transactions')\
+                    .where('user_id', '==', user_id)\
+                    .order_by('timestamp', direction=firestore.Query.DESCENDING)\
+                    .limit(20).get()
+                transactions = [tx.to_dict() for tx in transactions_query]
+            except Exception as e:
+                transactions = []
+            
             # Check if user is locked and show message on dashboard
             if user_data.get('is_locked', False):
                 admin_contact = "officialnetrasarma@gmail.com"
                 lock_message = f"Your account is locked. Please contact admin at {admin_contact} to unlock."
-                return render_template('dashboard.html', user=user_data, lock_message=lock_message)
+                return render_template('dashboard.html', user=user_data, lock_message=lock_message, transactions=transactions)
             
-            return render_template('dashboard.html', user=user_data)
+            return render_template('dashboard.html', user=user_data, transactions=transactions)
     return redirect(url_for('login'))
 
 @app.route("/change_password", methods=['GET', 'POST'])
