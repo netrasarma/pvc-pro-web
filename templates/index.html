@@ -273,53 +273,11 @@
                 <p class="text-xl text-gray-600">Choose the plan that works for you</p>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-                <div class="pricing-card bg-white border-2 border-blue-600 rounded-xl p-8 shadow-lg relative flex flex-col">
-                    <div class="absolute top-0 right-0 bg-blue-600 text-white text-xs font-semibold px-3 py-1 rounded-bl-lg rounded-tr-lg">MOST POPULAR</div>
-                    <div class="text-center mb-6">
-                        <h3 class="text-xl font-semibold mb-2">Annual Subscription</h3>
-                        <div class="text-4xl font-bold mb-2">₹699<span class="text-lg font-normal text-gray-500">/year</span></div>
-                        <p class="text-gray-600">Unlimited conversions for 12 months</p>
-                    </div>
-                    <ul class="space-y-3 mb-8 pl-5 flex-grow">
-                        <li class="flex items-baseline">
-                            <svg class="w-5 h-5 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            Unlimited document conversions
-                        </li>
-                         <li class="flex items-baseline">
-                            <svg class="w-5 h-5 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            All supported document types
-                        </li>
-                        <li class="flex items-baseline">
-                            <svg class="w-5 h-5 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            PDF to JPG conversion
-                        </li>
-                        <li class="flex items-baseline">
-                            <svg class="w-5 h-5 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Batch processing
-                        </li>
-                        <li class="flex items-baseline">
-                            <svg class="w-5 h-5 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Priority email support
-                        </li>
-                    </ul>
-                    <button onclick="initiatePurchase('Annual Subscription - ₹699/year', 699)" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-semibold shadow-md mt-auto">
-                        Get Annual Plan
-                    </button>
-                </div>
-                
+            <div class="grid grid-cols-1 md:grid-cols-1 gap-8 max-w-md mx-auto">
                 <div class="pricing-card bg-white border border-gray-200 rounded-xl p-8 shadow-lg flex flex-col">
                     <div class="text-center mb-6">
-                        <h3 class="text-xl font-semibold mb-2">Pay Per File</h3>
-                        <div class="text-4xl font-bold mb-2">₹1<span class="text-lg font-normal text-gray-500">/file</span></div>
+                        <h3 class="text-xl font-semibold mb-2">Buy Credits</h3>
+                        <div class="text-4xl font-bold mb-2">₹1<span class="text-lg font-normal text-gray-500">/credit</span></div>
                         <p class="text-gray-600">Pay only when you need it</p>
                     </div>
                     <ul class="space-y-3 mb-8 pl-5 flex-grow">
@@ -329,9 +287,9 @@
                         </li>
                     </ul>
                     <div class="mt-auto">
-                        <label for="file-quantity" class="block text-sm font-medium text-gray-700 mb-2">Number of Files (Min 100):</label>
+                        <label for="file-quantity" class="block text-sm font-medium text-gray-700 mb-2">Number of Credits (Min 100):</label>
                         <input type="number" id="file-quantity" value="100" min="100" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
-                        <button onclick="initiatePurchase('Pay Per File', -1)" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-6 rounded-lg font-semibold shadow-md">
+                        <button onclick="initiatePurchase(-1)" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-semibold shadow-md">
                             Buy Credits
                         </button>
                     </div>
@@ -339,8 +297,7 @@
             </div>
             
             <div class="text-center text-gray-500 mt-8">
-                <p>Both options include all features - choose based on your expected usage</p>
-                <p class="mt-2 text-sm">All prices are in Indian Rupees (₹). Taxes may apply.</p>
+                <p>All prices are in Indian Rupees (₹). Taxes may apply.</p>
             </div>
         </div>
     </section>
@@ -586,7 +543,7 @@
                 </button>
             </div>
             
-            <p class="mb-4">You're purchasing: <span id="selectedPlan" class="font-semibold">Annual Subscription - ₹699/year</span></p>
+            
             <p class="mb-6">Total: ₹<span id="planPrice">699</span></p>
             
             <form id="payment-form">
@@ -721,8 +678,7 @@
         });
     
         // Payment form handling
-        function showPaymentForm(planName, amount) {
-            document.getElementById('selectedPlan').textContent = planName;
+        function showPaymentForm(amount) {
             document.getElementById('planPrice').textContent = amount;
             document.getElementById('payment-amount').textContent = amount;
     
@@ -740,7 +696,7 @@
             document.getElementById('paymentModal').classList.add('hidden');
         }
     
-        function initiatePurchase(planName, amount) {
+        function initiatePurchase(amount) {
             if (!userLoggedIn) {
                 alert("Please log in or register to make a purchase.");
                 window.location.href = '/login';
@@ -760,10 +716,9 @@
                 }
                 
                 const totalAmount = quantity * pricePerFile;
-                const dynamicPlanName = quantity + ' File Credits at ₹' + pricePerFile + '/file';
-                showPaymentForm(dynamicPlanName, totalAmount);
+                showPaymentForm(totalAmount);
             } else {
-                showPaymentForm(planName, amount);
+                showPaymentForm(amount);
             }
         }
     
@@ -778,8 +733,7 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            order_amount: amount,
-                            order_note: document.getElementById('selectedPlan').textContent
+                            order_amount: amount
                         })
                     });
     

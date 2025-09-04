@@ -6,3 +6,8 @@ firebase-admin
 pyrebase4
 psutil
 google-cloud-secret-manager
+Pillow
+PyMuPDF
+opencv-python
+numpy
+scipy

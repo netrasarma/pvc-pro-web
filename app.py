@@ -1,5 +1,6 @@
 import datetime
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, flash
+from flask_cors import CORS
 from firebase_config import firebase  # Import your firebase manager
 import firebase_admin
 from firebase_admin import firestore
@@ -10,11 +11,15 @@ import uuid
 import traceback
 import logging
 import requests
+import io
+import base64
+from document_processor import AadharProcessor, PanProcessor, VoterProcessor, DLProcessor, RCProcessor, ABHAProcessor, AyushmanProcessor, EshramProcessor
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
+CORS(app)
 # IMPORTANT: Set a secret key for session management.
 app.secret_key = 'pvc-pro-a-very-secret-and-random-key-12345'
 
@@ -160,11 +165,17 @@ def dashboard():
             
             # Fetch user's credit transaction history
             try:
+                # First get all transactions for the user, then sort them locally
                 transactions_query = firebase.db.collection('credit_transactions')\
                     .where('user_id', '==', user_id)\
-                    .order_by('timestamp', direction=firestore.Query.DESCENDING)\
-                    .limit(20).get()
+                    .get()
                 transactions = [tx.to_dict() for tx in transactions_query]
+                
+                # Sort transactions by timestamp descending locally
+                transactions.sort(key=lambda x: x.get('timestamp', datetime.datetime.min), reverse=True)
+                
+                # Limit to 20 most recent
+                transactions = transactions[:20]
             except Exception as e:
                 transactions = []
             
@@ -313,6 +324,324 @@ def cashfree_webhook():
         app.logger.error("--- An error occurred in the webhook handler ---")
         app.logger.error(traceback.format_exc())
         return jsonify({"error": "Webhook processing error"}), 500
+
+@app.route("/process", methods=["POST"])
+def process_document():
+    if 'user' not in session:
+        return jsonify({"error": "User not logged in"}), 401
+
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    
+    file = request.files['file']
+    app.logger.info(f"Uploaded file: filename={file.filename}, content_type={file.content_type}")
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    doc_type = request.form.get('doc_type')
+    if not doc_type:
+        return jsonify({"error": "Document type not specified"}), 400
+
+    # Get password from request if provided
+    password = request.form.get('password', None)
+
+    try:
+        # First check if user has enough credits
+        user_id = session['user']['uid']
+        user_credits = session['user'].get('credits', 0)
+        
+        if user_credits < 1:
+            return jsonify({"error": "Insufficient credits. Please recharge your account."}), 402
+
+        file_stream = io.BytesIO(file.read())
+        processor = None
+
+        if doc_type == "aadhar":
+            processor = AadharProcessor(file_stream, password)
+        elif doc_type == "pan":
+            processor = PanProcessor(file_stream, password)
+        elif doc_type == "voter":
+            processor = VoterProcessor(file_stream, password)
+        elif doc_type == "dl":
+            processor = DLProcessor(file_stream, password)
+        elif doc_type == "rc":
+            processor = RCProcessor(file_stream, password)
+        elif doc_type == "abha":
+            processor = ABHAProcessor(file_stream, password)
+        elif doc_type == "ayushman":
+            processor = AyushmanProcessor(file_stream, password)
+        elif doc_type == "eshram":
+            processor = EshramProcessor(file_stream, password)
+        else:
+            return jsonify({"error": "Invalid document type"}), 400
+
+        if processor:
+            processed_images = processor.process()
+            response_images = {}
+            for side, img in processed_images.items():
+                buffered = io.BytesIO()
+                img.save(buffered, format="PNG")
+                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                response_images[side] = img_str
+            
+            # Deduct 1 credit for processing with specific description
+            doc_type_name = doc_type.upper() if doc_type else "DOCUMENT"
+            success, new_balance = firebase.deduct_user_credit(
+                user_id, 
+                1, 
+                f"Document processing: {doc_type_name} card"
+            )
+            if not success:
+                app.logger.error(f"Failed to deduct credits for user {user_id}: {new_balance}")
+                return jsonify({"error": "Failed to process payment. Please try again."}), 500
+            
+            # Update user session with new balance
+            session['user']['credits'] = new_balance
+            
+            # Update documents processed count
+            try:
+                user_ref = firebase.db.collection('users').document(user_id)
+                user_doc = user_ref.get()
+                if user_doc.exists:
+                    user_data = user_doc.to_dict()
+                    documents_processed = user_data.get('documents_processed', 0)
+                    total_spent = user_data.get('total_spent', 0)
+                    
+                    user_ref.update({
+                        'documents_processed': documents_processed + 1,
+                        'total_spent': total_spent + 1,
+                        'last_processed': firestore.SERVER_TIMESTAMP
+                    })
+            except Exception as e:
+                app.logger.error(f"Failed to update user stats: {e}")
+            
+            return jsonify(response_images)
+        else:
+            return jsonify({"error": "Processor not initialized"}), 500
+
+    except Exception as e:
+        app.logger.error(f"Error processing document: {e}")
+        app.logger.error(traceback.format_exc())
+        error_msg = str(e)
+        if "password protected" in error_msg.lower() or "password is not correct" in error_msg.lower():
+            return jsonify({"error": "PASSWORD_REQUIRED", "message": error_msg}), 403
+        return jsonify({"error": f"Document processing failed: {error_msg}"}), 500
+
+@app.route("/api/user_dashboard_data")
+def user_dashboard_data():
+    """API endpoint to get user dashboard data (credits and recent transactions)"""
+    if 'user' not in session:
+        return jsonify({"error": "User not logged in"}), 401
+    
+    try:
+        user_id = session['user']['uid']
+        
+        # Get user credits
+        user_ref = firebase.db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        if not user_doc.exists:
+            return jsonify({"error": "User not found"}), 404
+        
+        user_data = user_doc.to_dict()
+        credits = user_data.get('credits', 0)
+        
+        # Get recent transactions
+        transactions_query = firebase.db.collection('credit_transactions')\
+            .where('user_id', '==', user_id)\
+            .order_by('timestamp', direction=firestore.Query.DESCENDING)\
+            .limit(10)\
+            .get()
+        
+        transactions = []
+        for tx in transactions_query:
+            tx_data = tx.to_dict()
+            # Convert Firestore timestamp to ISO string for JSON serialization
+            if 'timestamp' in tx_data and hasattr(tx_data['timestamp'], 'isoformat'):
+                tx_data['timestamp'] = tx_data['timestamp'].isoformat()
+            transactions.append(tx_data)
+        
+        return jsonify({
+            "credits": credits,
+            "recent_transactions": transactions
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error fetching user dashboard data: {e}")
+        return jsonify({"error": "Failed to fetch dashboard data"}), 500
+
+@app.route("/api/update_profile", methods=["POST"])
+def update_profile():
+    """API endpoint to update user profile information"""
+    if 'user' not in session:
+        return jsonify({"error": "User not logged in"}), 401
+    
+    try:
+        user_id = session['user']['uid']
+        data = request.get_json()
+        
+        # Validate input
+        if not data.get('name'):
+            return jsonify({"error": "Name is required"}), 400
+        
+        # Update user profile in Firestore
+        user_ref = firebase.db.collection('users').document(user_id)
+        update_data = {
+            'name': data['name'],
+            'mobile': data.get('mobile', '')
+        }
+        
+        user_ref.update(update_data)
+        
+        # Update session data
+        session['user']['name'] = data['name']
+        session['user']['mobile'] = data.get('mobile', '')
+        
+        return jsonify({
+            "success": True,
+            "message": "Profile updated successfully",
+            "user": {
+                "name": data['name'],
+                "mobile": data.get('mobile', '')
+            }
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error updating profile: {e}")
+        return jsonify({"error": "Failed to update profile"}), 500
+
+@app.route("/api/contact_support", methods=["POST"])
+def contact_support():
+    """API endpoint to handle support contact form submissions"""
+    if 'user' not in session:
+        return jsonify({"error": "User not logged in"}), 401
+    
+    try:
+        user_id = session['user']['uid']
+        data = request.get_json()
+        
+        # Validate input
+        if not data.get('subject'):
+            return jsonify({"error": "Subject is required"}), 400
+        if not data.get('message'):
+            return jsonify({"error": "Message is required"}), 400
+        if not data.get('email'):
+            return jsonify({"error": "Email is required"}), 400
+        
+        # Store support ticket in Firestore
+        support_data = {
+            'user_id': user_id,
+            'user_name': session['user'].get('name', ''),
+            'user_email': data['email'],
+            'subject': data['subject'],
+            'message': data['message'],
+            'status': 'new',
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        }
+        
+        firebase.db.collection('support_tickets').add(support_data)
+        
+        # TODO: Send email notification to support team
+        # You can integrate with email service here
+        
+        return jsonify({
+            "success": True,
+            "message": "Support message sent successfully. We will get back to you soon."
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error processing support request: {e}")
+        return jsonify({"error": "Failed to send support message"}), 500
+
+@app.route("/api/google_auth", methods=["POST"])
+def google_auth():
+    data = request.get_json()
+    id_token = data.get('id_token')
+
+    if not id_token:
+        return jsonify({"error": "ID token is missing"}), 400
+
+    try:
+        # Verify the ID token
+        decoded_token = firebase_admin.auth.verify_id_token(id_token)
+        uid = decoded_token['uid']
+        email = decoded_token['email']
+        name = decoded_token.get('name', email) # Use email as name if not provided by Google
+
+        # Check if user exists in Firebase Auth, if not, create them
+        try:
+            user_record = firebase_admin.auth.get_user(uid)
+        except firebase_admin.auth.UserNotFoundError:
+            # User does not exist, create them
+            user_record = firebase_admin.auth.create_user(
+                uid=uid,
+                email=email,
+                display_name=name,
+                email_verified=True # Google verifies email
+            )
+            # Also create user profile in Firestore
+            user_data = {
+                "name": name,
+                "email": email,
+                "registered_on": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "is_activated": False,
+                "is_admin": False,
+                "activation_key": "",
+                "subscription_start": "",
+                "subscription_end": "",
+                "status": "Registered",
+                "uid": uid,
+                "credits": 0 # Initialize credits
+            }
+            firebase.db.collection('users').document(uid).set(user_data)
+
+        # Sign in the user into Flask session
+        # This part needs to mimic the existing sign_in logic to set session['user']
+        # For simplicity, we'll just set the session directly based on decoded_token
+        user_doc_ref = firebase.db.collection('users').document(uid)
+        user_doc = user_doc_ref.get()
+        if user_doc.exists:
+            credits = user_doc.to_dict().get('credits', 0)
+        else:
+            # This case should ideally not happen if user is created above,
+            # but as a fallback, initialize credits to 0 and create the document
+            # if it doesn't exist for some reason.
+            user_data = {
+                "name": name,
+                "email": email,
+                "registered_on": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "is_activated": False,
+                "is_admin": False,
+                "activation_key": "",
+                "subscription_start": "",
+                "subscription_end": "",
+                "status": "Registered",
+                "uid": uid,
+                "credits": 0
+            }
+            firebase.db.collection('users').document(uid).set(user_data)
+            credits = 0
+
+        session['user'] = {
+            'uid': uid,
+            'localId': uid, # For compatibility with existing code
+            'email': email,
+            'name': name,
+            'is_activated': user_record.custom_claims.get('is_activated', False) if user_record.custom_claims else False,
+            'credits': credits # Fetch current credits
+        }
+        session['user_token'] = decoded_token # Store the decoded token if needed elsewhere
+
+        flash('Login successful!', 'success')
+        return jsonify({"message": "Google login successful", "redirect": url_for('dashboard')}), 200
+
+    except ValueError as e:
+        app.logger.error(f"Invalid ID token: {e}")
+        return jsonify({"error": "Invalid ID token"}), 401
+    except Exception as e:
+        app.logger.error(f"Error during Google auth: {e}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": "Google authentication failed"}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

@@ -9,13 +9,13 @@ import os
 
 # Firebase web app configuration
 FIREBASE_CONFIG = {
-    "apiKey": "AIzaSyBC7_ZtkquDPObGvmmHYDOCuzfSXANCBvY",
-    "authDomain": "pvc-maker.firebaseapp.com",
-    "databaseURL": "https://pvc-maker-default-rtdb.firebaseio.com",
-    "projectId": "pvc-maker",
-    "storageBucket": "pvc-maker.firebasestorage.app",
-    "messagingSenderId": "818295298960",
-    "appId": "1:818295298960:web:ea07cca1c740bf8988f115"
+  "apiKey": "AIzaSyBSUk5IGYsEckBkSgiexQvDCUvo6IsIe2w",
+  "authDomain": "pvc-pro-web.firebaseapp.com",
+  "databaseURL": "https://pvc-pro-web-default-rtdb.firebaseio.com",
+  "projectId": "pvc-pro-web",
+  "storageBucket": "pvc-pro-web.firebasestorage.app",
+  "messagingSenderId": "432888002709",
+  "appId": "1:432888002709:web:06951cd41559f17f42039c"
 }
 
 class FirebaseManager:
@@ -23,14 +23,21 @@ class FirebaseManager:
         import json
         self.firebase_admin_initialized = False
         try:
-            # Initialize Firebase Admin SDK using Application Default Credentials (ADC)
-            firebase_admin.initialize_app()
+            if not firebase_admin._apps: # Check if any app is already initialized
+                cred = credentials.Certificate("newfirebasekey.json")
+                firebase_admin.initialize_app(cred)
             self.firebase_admin_initialized = True
-            print("Firebase Admin SDK initialized successfully using Application Default Credentials (ADC).")
+            print("Firebase Admin SDK initialized successfully.")
+        except ValueError as e:
+            # This error occurs if initialize_app is called again without a name
+            # and an app is already initialized. We can ignore it if it's
+            # due to a legitimate second initialization attempt.
+            if "The default Firebase app already exists" not in str(e):
+                print(f"Error initializing Firebase Admin SDK: {e}")
+                print("Please ensure firebase-adminsdk.json is present in the directory")
         except Exception as e:
-            print(f"Error initializing Firebase Admin SDK with ADC: {e}")
-            print("Ensure the Cloud Run service account has the necessary permissions.")
-            return
+            print(f"Error initializing Firebase Admin SDK: {e}")
+            print("Please ensure firebase-adminsdk.json is present in the directory")
 
         try:
             self.pb = pyrebase.initialize_app(FIREBASE_CONFIG)
@@ -605,7 +612,7 @@ class FirebaseManager:
         except Exception as e:
             return False, str(e)
     
-    def deduct_user_credit(self, uid, credits=1):
+    def deduct_user_credit(self, uid, credits=1, description=None):
         """Deduct credits from user account"""
         try:
             user_ref = self.db.collection('users').document(uid)
@@ -628,15 +635,20 @@ class FirebaseManager:
                 'last_credit_update': firestore.SERVER_TIMESTAMP
             })
             
-            # Log credit transaction
+            # Generate transaction ID
+            import uuid
+            transaction_id = f"TXN_{uuid.uuid4().hex[:8].upper()}"
+            
+            # Log credit transaction - store negative amount for debits
             self.db.collection('credit_transactions').add({
                 'user_id': uid,
                 'type': 'DEBIT',
-                'amount': credits,
+                'amount': -credits,  # Negative amount for debits
                 'balance_before': current_credits,
                 'balance_after': new_balance,
                 'timestamp': firestore.SERVER_TIMESTAMP,
-                'description': f'Credits deducted for export: {credits}'
+                'description': description or f'Credits deducted for document processing: {credits}',
+                'transaction_id': transaction_id
             })
             
             return True, new_balance
