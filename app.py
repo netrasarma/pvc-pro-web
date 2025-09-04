@@ -1,7 +1,7 @@
 import datetime
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, flash
 from flask_cors import CORS
-from firebase_config import firebase  # Import your firebase manager
+from firebase_config import firebase, FIREBASE_CONFIG  # Import your firebase manager and config
 import firebase_admin
 from firebase_admin import firestore
 import hmac
@@ -47,31 +47,31 @@ def login():
             success, user = firebase.sign_in(email, password)
             print(f"Login attempt for {email}, success: {success}, user: {user}")
             if not success:
-                return render_template('login.html', error=user)
-            
+                return render_template('login.html', error=user, firebase_config=FIREBASE_CONFIG)
+
             # Store user token dict in session as 'user_token'
             session['user_token'] = user
-            
+
             # Fetch user profile and store in session
             uid = user.get('localId') or user.get('local_id') or user.get('userId')
             if not uid:
                 print(f"UID not found in user token for {email}: {user}")
-                return render_template('login.html', error="Login failed: User ID not found.")
-            
+                return render_template('login.html', error="Login failed: User ID not found.", firebase_config=FIREBASE_CONFIG)
+
             success_profile, user_profile = firebase.get_user_profile(uid)
             if success_profile:
                 session['user'] = user_profile
             else:
                 session['user'] = {}
-            
+
             flash('Login successful!', 'success')
             return redirect(url_for('dashboard'))
         except Exception as e:
             print(f"Exception during login for {email}: {e}")
-            return render_template('login.html', error="Invalid email or password.")
+            return render_template('login.html', error="Invalid email or password.", firebase_config=FIREBASE_CONFIG)
     else:
         # GET request
-        return render_template('login.html')
+        return render_template('login.html', firebase_config=FIREBASE_CONFIG)
 
 from flask import request, jsonify
 
@@ -144,8 +144,8 @@ def register():
             error = result
             if 'EMAIL_EXISTS' in error:
                 error = "This email address is already in use."
-            return render_template('register.html', error=error)
-    return render_template('register.html')
+            return render_template('register.html', error=error, firebase_config=FIREBASE_CONFIG)
+    return render_template('register.html', firebase_config=FIREBASE_CONFIG)
 
 @app.route("/dashboard")
 def dashboard():

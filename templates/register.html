@@ -85,15 +85,8 @@
     </footer>
 
     <script>
-        // Firebase Configuration (from user provided details)
-        const firebaseConfig = {
-            apiKey: "AIzaSyBSUk5IGYsEckBkSgiexQvDCUvo6IsIe2w",
-            authDomain: "pvc-pro-web.firebaseapp.com",
-            projectId: "pvc-pro-web",
-            storageBucket: "pvc-pro-web.firebasestorage.app",
-            messagingSenderId: "432888002709",
-            appId: "1:432888002709:web:06951cd41559f17f42039c"
-        };
+        // Firebase Configuration (loaded dynamically from backend)
+        const firebaseConfig = JSON.parse('{{ firebase_config|tojson|safe }}');
 
         // Initialize Firebase
         firebase.initializeApp(firebaseConfig);

@@ -6,17 +6,90 @@ import uuid
 import datetime
 import platform
 import os
+import json
 
-# Firebase web app configuration
-FIREBASE_CONFIG = {
-  "apiKey": "AIzaSyBSUk5IGYsEckBkSgiexQvDCUvo6IsIe2w",
-  "authDomain": "pvc-pro-web.firebaseapp.com",
-  "databaseURL": "https://pvc-pro-web-default-rtdb.firebaseio.com",
-  "projectId": "pvc-pro-web",
-  "storageBucket": "pvc-pro-web.firebasestorage.app",
-  "messagingSenderId": "432888002709",
-  "appId": "1:432888002709:web:06951cd41559f17f42039c"
-}
+# Get Firebase configuration from environment variables (set by secret manager)
+def get_firebase_config():
+    """Get Firebase configuration from environment variables"""
+    try:
+        # Try to get from environment variables first (for production)
+        api_key = os.getenv('FIREBASE_API_KEY')
+        auth_domain = os.getenv('FIREBASE_AUTH_DOMAIN')
+        project_id = os.getenv('FIREBASE_PROJECT_ID')
+        storage_bucket = os.getenv('FIREBASE_STORAGE_BUCKET')
+        messaging_sender_id = os.getenv('FIREBASE_MESSAGING_SENDER_ID')
+        app_id = os.getenv('FIREBASE_APP_ID')
+
+        if all([api_key, auth_domain, project_id, storage_bucket, messaging_sender_id, app_id]):
+            return {
+                "apiKey": api_key,
+                "authDomain": auth_domain,
+                "databaseURL": f"https://{project_id}-default-rtdb.firebaseio.com",
+                "projectId": project_id,
+                "storageBucket": storage_bucket,
+                "messagingSenderId": messaging_sender_id,
+                "appId": app_id
+            }
+        else:
+            # Fallback to hardcoded config for development (should be removed in production)
+            print("Warning: Using fallback Firebase config. Environment variables not set.")
+            return {
+                "apiKey": "AIzaSyBSUk5IGYsEckBkSgiexQvDCUvo6IsIe2w",
+                "authDomain": "pvc-pro-web.firebaseapp.com",
+                "databaseURL": "https://pvc-pro-web-default-rtdb.firebaseio.com",
+                "projectId": "pvc-pro-web",
+                "storageBucket": "pvc-pro-web.firebasestorage.app",
+                "messagingSenderId": "432888002709",
+                "appId": "1:432888002709:web:06951cd41559f17f42039c"
+            }
+    except Exception as e:
+        print(f"Error getting Firebase config: {e}")
+        # Fallback config
+        return {
+            "apiKey": "AIzaSyBSUk5IGYsEckBkSgiexQvDCUvo6IsIe2w",
+            "authDomain": "pvc-pro-web.firebaseapp.com",
+            "databaseURL": "https://pvc-pro-web-default-rtdb.firebaseio.com",
+            "projectId": "pvc-pro-web",
+            "storageBucket": "pvc-pro-web.firebasestorage.app",
+            "messagingSenderId": "432888002709",
+            "appId": "1:432888002709:web:06951cd41559f17f42039c"
+        }
+
+# Get Firebase service account key from environment variable or secret manager
+def get_firebase_service_account():
+    """Get Firebase service account key from environment or secret manager only"""
+    try:
+        # Try to get from environment variable first
+        service_account_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON')
+        if service_account_json:
+            print("Loading Firebase service account from environment variable.")
+            return json.loads(service_account_json)
+
+        # Try to get from secret manager (Google Cloud)
+        try:
+            from google.cloud import secretmanager_v1
+            client = secretmanager_v1.SecretManagerServiceClient()
+            project_id = os.getenv('GOOGLE_CLOUD_PROJECT', 'pvc-pro-web')
+            secret_name = 'firebase-service-account'
+            version = 'latest'
+
+            name = f"projects/{project_id}/secrets/{secret_name}/versions/{version}"
+            response = client.access_secret_version(request={"name": name})
+            service_account_json = response.payload.data.decode("UTF-8")
+            print("Loading Firebase service account from Google Cloud Secret Manager.")
+            return json.loads(service_account_json)
+        except Exception as e:
+            print(f"Could not get Firebase service account from secret manager: {e}")
+
+        print("Error: No Firebase service account found. Please set FIREBASE_SERVICE_ACCOUNT_JSON environment variable or ensure firebase-service-account secret exists in Google Cloud Secret Manager.")
+        return None
+
+    except Exception as e:
+        print(f"Error getting Firebase service account: {e}")
+        return None
+
+# Initialize Firebase configuration
+FIREBASE_CONFIG = get_firebase_config()
 
 class FirebaseManager:
     def __init__(self):
@@ -24,21 +97,31 @@ class FirebaseManager:
         self.firebase_admin_initialized = False
         try:
             if not firebase_admin._apps: # Check if any app is already initialized
-                cred = credentials.Certificate("newfirebasekey.json")
-                firebase_admin.initialize_app(cred)
-            self.firebase_admin_initialized = True
-            print("Firebase Admin SDK initialized successfully.")
+                # Get service account credentials from environment/secret manager
+                service_account_data = get_firebase_service_account()
+                if service_account_data:
+                    cred = credentials.Certificate(service_account_data)
+                    firebase_admin.initialize_app(cred)
+                    self.firebase_admin_initialized = True
+                    print("Firebase Admin SDK initialized successfully using secure credentials.")
+                else:
+                    print("Error: Could not load Firebase service account credentials.")
+                    print("Please ensure FIREBASE_SERVICE_ACCOUNT_JSON environment variable is set or firebase-service-account secret exists in Google Cloud Secret Manager.")
+                    return
+            else:
+                self.firebase_admin_initialized = True
+                print("Firebase Admin SDK already initialized.")
         except ValueError as e:
             # This error occurs if initialize_app is called again without a name
             # and an app is already initialized. We can ignore it if it's
             # due to a legitimate second initialization attempt.
             if "The default Firebase app already exists" not in str(e):
                 print(f"Error initializing Firebase Admin SDK: {e}")
-                print("Please ensure firebase-adminsdk.json is present in the directory")
+                print("Please check your Firebase service account credentials.")
         except Exception as e:
             print(f"Error initializing Firebase Admin SDK: {e}")
-            print("Please ensure firebase-adminsdk.json is present in the directory")
-
+            print("Please check your Firebase service account credentials and ensure they are properly configured.")
+ 
         try:
             self.pb = pyrebase.initialize_app(FIREBASE_CONFIG)
             self.auth = self.pb.auth()
@@ -65,33 +148,14 @@ class FirebaseManager:
             return
 
     def _check_login_attempts(self, email):
+        """Check if user has exceeded login attempts"""
         if not self.firebase_admin_initialized:
             print("Firebase Admin SDK not initialized. Cannot check login attempts.")
             return False
         try:
             import datetime
             one_hour_ago = datetime.datetime.now() - datetime.timedelta(hours=1)
-            
-            failed_attempts = self.security_logs_collection.where(
-                'event_type', '==', 'failed_login'
-            ).where(
-                'details.email', '==', email
-            ).where(
-                'timestamp', '>=', one_hour_ago
-            ).get()
-            
-            return len(failed_attempts) >= self.max_login_attempts
-        except Exception as e:
-            print(f"Error checking login attempts for {email}: {e}")
-            return False
 
-    def _check_login_attempts(self, email):
-        """Check if user has exceeded login attempts"""
-        try:
-            # Get recent failed login attempts (last hour)
-            import datetime
-            one_hour_ago = datetime.datetime.now() - datetime.timedelta(hours=1)
-            
             failed_attempts = self.security_logs_collection.where(
                 'event_type', '==', 'failed_login'
             ).where(
@@ -99,7 +163,7 @@ class FirebaseManager:
             ).where(
                 'timestamp', '>=', one_hour_ago
             ).get()
-            
+
             return len(failed_attempts) >= self.max_login_attempts
         except Exception as e:
             print(f"Error checking login attempts for {email}: {e}")
