@@ -377,27 +377,75 @@ def process_document():
 
         if processor:
             processed_images = processor.process()
-            response_images = {}
+            app.logger.info(f"Processing completed for user {user_id}. Images produced: {list(processed_images.keys()) if processed_images else 'None'}")
+
+            # Validate that we have valid processed images
+            if not processed_images or len(processed_images) == 0:
+                app.logger.error(f"No images produced from processing for user {user_id}")
+                return jsonify({"error": "Document processing failed: No valid images could be extracted. Please check your document format and try again."}), 422
+
+            # Validate image quality and content
+            valid_images = {}
             for side, img in processed_images.items():
+                app.logger.info(f"Validating image {side}: {img.width}x{img.height}")
+
+                # Check if image has reasonable dimensions (not too small)
+                if img.width < 100 or img.height < 100:
+                    app.logger.warning(f"Image {side} too small: {img.width}x{img.height}")
+                    continue
+
+                # Check if image is not completely blank/empty
+                # Convert to grayscale and check if it's mostly white/empty
+                img_gray = img.convert('L')
+                pixels = list(img_gray.getdata())
+                avg_brightness = sum(pixels) / len(pixels)
+                app.logger.info(f"Image {side} avg brightness: {avg_brightness}")
+
+                # If image is too bright (mostly white), it might be empty
+                if avg_brightness > 250:  # Very bright = likely empty
+                    app.logger.warning(f"Image {side} appears to be empty/blank (avg brightness: {avg_brightness})")
+                    continue
+
+                valid_images[side] = img
+
+            app.logger.info(f"Valid images after quality check: {list(valid_images.keys())}")
+
+            if not valid_images:
+                app.logger.error(f"No valid images after quality check for user {user_id}")
+                return jsonify({"error": "Document processing failed: Extracted images appear to be blank or corrupted. Please ensure your document is clear and properly scanned."}), 422
+
+            response_images = {}
+            for side, img in valid_images.items():
                 buffered = io.BytesIO()
                 img.save(buffered, format="PNG")
                 img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
                 response_images[side] = img_str
-            
-            # Deduct 1 credit for processing with specific description
+
+            # Only deduct credit if we have valid processed images
             doc_type_name = doc_type.upper() if doc_type else "DOCUMENT"
+
+            # Double check user credits before deducting to avoid race conditions
+            user_ref = firebase.db.collection('users').document(user_id)
+            user_doc = user_ref.get()
+            if not user_doc.exists:
+                return jsonify({"error": "User not found"}), 404
+            user_data = user_doc.to_dict()
+            current_credits = user_data.get('credits', 0)
+            if current_credits < 1:
+                return jsonify({"error": "Insufficient credits. Please recharge your account."}), 402
+
             success, new_balance = firebase.deduct_user_credit(
-                user_id, 
-                1, 
+                user_id,
+                1,
                 f"Document processing: {doc_type_name} card"
             )
             if not success:
                 app.logger.error(f"Failed to deduct credits for user {user_id}: {new_balance}")
                 return jsonify({"error": "Failed to process payment. Please try again."}), 500
-            
+
             # Update user session with new balance
             session['user']['credits'] = new_balance
-            
+
             # Update documents processed count
             try:
                 user_ref = firebase.db.collection('users').document(user_id)
@@ -406,7 +454,7 @@ def process_document():
                     user_data = user_doc.to_dict()
                     documents_processed = user_data.get('documents_processed', 0)
                     total_spent = user_data.get('total_spent', 0)
-                    
+
                     user_ref.update({
                         'documents_processed': documents_processed + 1,
                         'total_spent': total_spent + 1,
@@ -414,7 +462,7 @@ def process_document():
                     })
             except Exception as e:
                 app.logger.error(f"Failed to update user stats: {e}")
-            
+
             return jsonify(response_images)
         else:
             return jsonify({"error": "Processor not initialized"}), 500

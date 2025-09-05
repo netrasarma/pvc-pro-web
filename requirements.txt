@@ -9,6 +9,6 @@ google-cloud-secret-manager
 python-dotenv
 Pillow
 PyMuPDF
-opencv-python
+opencv-python-headless
 numpy
 scipy

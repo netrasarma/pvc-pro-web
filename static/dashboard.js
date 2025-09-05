@@ -285,7 +285,10 @@ document.getElementById('processing-form').addEventListener('submit', async func
     // Process each file sequentially using the new password-aware function
     for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
-        await processSingleFile(file, docType, processedDocuments, errors);
+        const result = await processSingleFile(file, docType, processedDocuments, errors);
+        if (result) {
+            processedCount++;
+        }
     }
 
     // Update UI
@@ -411,16 +414,16 @@ function downloadAllProcessedFiles() {
 
         processedDocuments.forEach((doc, index) => {
             const baseName = doc.fileName.replace(/\.[^/.]+$/, '');
-            
+
             if (doc.front) {
-                const frontData = doc.front.split(',')[1]; // Remove data:image/png;base64, prefix
-                zip.file(`${baseName}_front.png`, frontData, {base64: true});
+                // doc.front is base64 string without data URL prefix
+                zip.file(`${baseName}_front.png`, doc.front, {base64: true});
                 fileCount++;
             }
-            
+
             if (doc.back) {
-                const backData = doc.back.split(',')[1]; // Remove data:image/png;base64, prefix
-                zip.file(`${baseName}_back.png`, backData, {base64: true});
+                // doc.back is base64 string without data URL prefix
+                zip.file(`${baseName}_back.png`, doc.back, {base64: true});
                 fileCount++;
             }
         });
@@ -735,9 +738,8 @@ async function processSingleFile(file, docType, processedDocuments, errors) {
                     back: result.back,
                     timestamp: new Date()
                 });
-                processedCount++;
                 console.log(`Successfully processed: ${file.name}`);
-                return; // Success, exit the function
+                return true; // Success, return true to indicate success
             } else {
                 if (result.error === "PASSWORD_REQUIRED" && retryCount < maxRetries - 1) {
                     // Show password prompt

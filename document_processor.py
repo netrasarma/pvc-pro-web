@@ -1,3 +1,4 @@
+
 from PIL import Image, ImageDraw, ImageFont
 import fitz  # PyMuPDF
 import cv2
@@ -25,7 +26,17 @@ class AadharProcessor:
             self.load_pdf()
             self.extract_pages()
             self.auto_crop()
-            return self.get_processed_images()
+            images = self.get_processed_images()
+
+            # Validate that we have meaningful content
+            if not images:
+                raise Exception("No images could be extracted from the document")
+
+            for side, img in images.items():
+                if img.width < 200 or img.height < 200:
+                    raise Exception(f"Extracted {side} image is too small ({img.width}x{img.height})")
+
+            return images
         except Exception as e:
             raise Exception(f"Aadhar processing failed: {str(e)}")
 
@@ -217,6 +228,23 @@ class PanProcessor:
         self.cropped_back = None
         self.pvc_width = 1012
         self.pvc_height = 638
+    def process(self):
+        try:
+            self.load_pdf()
+            self.auto_crop()
+            images = self.get_processed_images()
+
+            # Validate that we have meaningful content
+            if not images:
+                raise Exception("No images could be extracted from the document")
+
+            for side, img in images.items():
+                if img.width < 200 or img.height < 200:
+                    raise Exception(f"Extracted {side} image is too small ({img.width}x{img.height})")
+
+            return images
+        except Exception as e:
+            raise Exception(f"PAN processing failed: {str(e)}")
 
     def process(self):
         try:
