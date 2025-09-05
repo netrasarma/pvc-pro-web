@@ -90,7 +90,7 @@
                 </div>
             </div>
         </nav>
-        <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 
     <section class="hero-gradient text-white py-16 md:py-24">
         <div class="container mx-auto px-6 flex flex-col md:flex-row items-center">
@@ -722,57 +722,68 @@
             }
         }
     
-        // Cashfree payment integration
+        // Razorpay payment integration
         document.getElementById('cf-pay-button').addEventListener('click', async function () {
             const amount = parseFloat(document.getElementById('planPrice').textContent);
-            
-            async function fetchPaymentSessionId() {
+
+            async function fetchRazorpayOrder() {
                 try {
-                    const backendUrl = '/create_order'; 
+                    const backendUrl = '/create_razorpay_order';
                     const response = await fetch(backendUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            order_amount: amount
+                            amount: amount * 100, // Convert to paisa
+                            currency: 'INR'
                         })
                     });
-    
+
                     const data = await response.json();
                     if (!response.ok) {
                         throw new Error(data.error || 'Server error');
                     }
-                    return data.paymentSessionId;
+                    return data;
                 } catch (error) {
-                    console.error('Error fetching payment session ID:', error);
+                    console.error('Error fetching Razorpay order:', error);
                     alert(`Could not initiate payment. ${error.message}`);
                     return null;
                 }
             }
-    
-            const paymentSessionId = await fetchPaymentSessionId();
-    
-            if (!paymentSessionId) {
-                return; 
+
+            const orderData = await fetchRazorpayOrder();
+
+            if (!orderData) {
+                return;
             }
-            
-            const cashfree = new Cashfree({
-                mode: "production"
-            });
-            const checkoutOptions = {
-                paymentSessionId: paymentSessionId
-            };
-            cashfree.checkout(checkoutOptions).then((result) => {
-                if (result.error) {
-                    alert(result.error.message);
-                } else {
-                    // On successful payment, redirect to dashboard and refresh credits
-                    // Note: Cashfree checkout returns a promise that resolves when checkout is closed
-                    // We should not redirect immediately here, but listen for payment success via webhook or client-side polling
-                    // For now, just close the payment modal
+
+            const options = {
+                key: orderData.key,
+                amount: orderData.amount,
+                currency: orderData.currency,
+                name: 'PVC Pro',
+                description: 'Credit Purchase',
+                order_id: orderData.id,
+                handler: function (response) {
+                    // Payment successful
+                    alert('Payment successful! Credits will be added to your account.');
                     hidePaymentForm();
-                    // Optionally, show a message or refresh credits via polling
+                    // Optionally redirect to dashboard or refresh page
+                    if (userLoggedIn) {
+                        window.location.href = '/dashboard';
+                    }
+                },
+                prefill: {
+                    name: document.getElementById('payment-name').value,
+                    email: document.getElementById('payment-email').value,
+                    contact: document.getElementById('payment-phone').value
+                },
+                theme: {
+                    color: '#2563eb'
                 }
-            });
+            };
+
+            const rzp = new Razorpay(options);
+            rzp.open();
         });
     </script>
 </body>
