@@ -31,7 +31,12 @@ RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
 RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET")
 
 # Initialize Razorpay client
-razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
+    razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+    app.logger.info("Razorpay client initialized successfully")
+else:
+    app.logger.error("Razorpay credentials not configured")
+    razorpay_client = None
 
 # --- Main Routes (Pages) ---
 
@@ -247,10 +252,14 @@ def create_razorpay_order():
     receipt = data.get("receipt", f"receipt_{uuid.uuid4().hex}")
 
     try:
+        if not razorpay_client:
+            return jsonify({"error": "Payment service not configured"}), 500
+
         razorpay_order = razorpay_client.order.create({
             "amount": amount,
             "currency": currency,
             "receipt": receipt,
+            "notes": {"user_id": user_id},
             "payment_capture": 1
         })
 
@@ -304,6 +313,10 @@ def razorpay_webhook():
 
             # Get order details to find user ID
             try:
+                if not razorpay_client:
+                    app.logger.error("Razorpay client not initialized")
+                    return jsonify({"error": "Payment service not configured"}), 500
+
                 order_details = razorpay_client.order.fetch(order_id)
                 notes = order_details.get('notes', {})
                 user_id = notes.get('user_id')
@@ -704,4 +717,3 @@ def google_auth():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-
