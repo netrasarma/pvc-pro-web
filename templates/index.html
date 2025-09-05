@@ -733,7 +733,7 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            amount: amount * 100, // Convert to paisa
+                            amount: Math.round(amount) * 100, // Convert to paisa, rounding to nearest integer
                             currency: 'INR'
                         })
                     });
