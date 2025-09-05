@@ -10,6 +10,7 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GAR_LOCATION: us-central1
   SERVICE: pvc-pro
+  REPOSITORY: pvc-pro # Added for Artifact Registry
 
 jobs:
   deploy:
@@ -20,31 +21,28 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
-      with:
-        project_id: ${{ secrets.GCP_PROJECT_ID }}
-        service_account_key: ${{ secrets.GCP_SA_KEY }}
-        export_default_credentials: true
 
-    - name: Authorize Docker push
-      run: gcloud auth configure-docker
+    - name: Configure Docker
+      run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
 
-    - name: Build and push Docker image
+    - name: Build and push Docker image to Artifact Registry
       run: |
-        gcloud builds submit --tag gcr.io/$PROJECT_ID/$SERVICE
+        gcloud builds submit --tag ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:latest .
 
     - name: Deploy to Cloud Run
       run: |
-        gcloud run deploy $SERVICE \
-          --image gcr.io/$PROJECT_ID/$SERVICE \
+        gcloud run deploy ${{ env.SERVICE }} \
+          --image ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:latest \
           --platform managed \
-          --region us-central1 \
+          --region ${{ env.GAR_LOCATION }} \
           --allow-unauthenticated \
-          --set-env-vars "CASHFREE_APP_ID=${{ secrets.CASHFREE_APP_ID }}" \
-          --set-env-vars "CASHFREE_SECRET_KEY=${{ secrets.CASHFREE_SECRET_KEY }}" \
-          --set-env-vars "CASHFREE_WEBHOOK_SECRET=${{ secrets.CASHFREE_WEBHOOK_SECRET }}" \
-          --set-env-vars "FIREBASE_PROJECT_ID=pvc-pro-web" \
-          --set-env-vars "FIREBASE_CREDENTIAL_PATH=/secrets/firebase/firebase-adminsdk.json" \
-          --update-secrets firebase-adminsdk=/secrets/firebase/firebase-adminsdk.json:latest \
-          --service-account ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          --service-account ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }} \
+          --set-env-vars "CASHFREE_APP_ID=${{ secrets.CASHFREE_APP_ID }},CASHFREE_SECRET_KEY=${{ secrets.CASHFREE_SECRET_KEY }},CASHFREE_WEBHOOK_SECRET=${{ secrets.CASHFREE_WEBHOOK_SECRET }},FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }},FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }},FIREBASE_AUTH_DOMAIN=${{ secrets.FIREBASE_AUTH_DOMAIN }},FIREBASE_STORAGE_BUCKET=${{ secrets.FIREBASE_STORAGE_BUCKET }},FIREBASE_MESSAGING_SENDER_ID=${{ secrets.FIREBASE_MESSAGING_SENDER_ID }},FIREBASE_APP_ID=${{ secrets.FIREBASE_APP_ID }},GOOGLE_CLOUD_PROJECT=${{ secrets.GOOGLE_CLOUD_PROJECT }},SECRET_KEY=${{ secrets.SECRET_KEY }}" \
+          --update-secrets=FIREBASE_SERVICE_ACCOUNT_JSON=firebase-service-account:latest
