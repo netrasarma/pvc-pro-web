@@ -14,6 +14,7 @@ import requests
 import io
 import base64
 from document_processor import AadharProcessor, PanProcessor, VoterProcessor, DLProcessor, RCProcessor, ABHAProcessor, AyushmanProcessor, EshramProcessor
+import razorpay
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)
@@ -25,9 +26,12 @@ app.secret_key = 'pvc-pro-a-very-secret-and-random-key-12345'
 
 # --- Environment Variables ---
 # These are loaded from your Cloud Run service settings
-CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID")
-CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY")
-CASHFREE_WEBHOOK_SECRET = os.getenv("CASHFREE_WEBHOOK_SECRET")
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+
+# Initialize Razorpay client
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 # --- Main Routes (Pages) ---
 
@@ -229,101 +233,108 @@ def logout():
 
 # --- API and Webhook Routes ---
 
-@app.route("/create_order", methods=["POST"])
-def create_order():
-    """API endpoint to create a payment order."""
+@app.route("/create_razorpay_order", methods=["POST"])
+def create_razorpay_order():
+    """API endpoint to create a Razorpay payment order."""
     if 'user' not in session:
         return jsonify({"error": "User not logged in"}), 401
 
     data = request.json
     user_id = session['user']['uid']
-    
-    # <-- 2. DEFINE CASHFREE VARIABLES LOCALLY
-    CASHFREE_URL = "https://api.cashfree.com/pg/orders"
-    HEADERS = {
-        "Content-Type": "application/json",
-        "x-api-version": "2022-09-01",
-        "x-client-id": CASHFREE_APP_ID,
-        "x-client-secret": CASHFREE_SECRET_KEY
-    }
-    
-    order_id = "ORDER_" + str(uuid.uuid4()).replace("-", "")[:12]
-    
-    order_data = {
-        "order_id": order_id,
-        "order_amount": data.get("order_amount"),
-        "order_currency": "INR",
-        "order_note": data.get("order_note"),
-        "customer_details": {
-            "customer_id": user_id,
-            "customer_email": session['user']['email'],
-            "customer_phone": session['user'].get('mobile', ''),
-            "customer_name": session['user']['name']
-        },
-        "order_meta": {
-             "notify_url": url_for('cashfree_webhook', _external=True, _scheme='https')
-        },
-        "order_tags": {
-            "internal_user_id": user_id
-        }
-    }
-    #DEBUG LINE
-    app.logger.info(f"Sending data to Cashfree: {order_data}")
+
+    amount = data.get("amount")
+    currency = data.get("currency", "INR")
+    receipt = data.get("receipt", f"receipt_{uuid.uuid4().hex}")
+
     try:
-        response = requests.post(CASHFREE_URL, headers=HEADERS, json=order_data)
-        response.raise_for_status()
-        result = response.json()
-        return jsonify({"paymentSessionId": result.get("payment_session_id")})
+        razorpay_order = razorpay_client.order.create({
+            "amount": amount,
+            "currency": currency,
+            "receipt": receipt,
+            "payment_capture": 1
+        })
+
+        app.logger.info(f"Created Razorpay order: {razorpay_order}")
+
+        return jsonify({
+            "order_id": razorpay_order.get("id"),
+            "amount": razorpay_order.get("amount"),
+            "currency": razorpay_order.get("currency"),
+            "key_id": RAZORPAY_KEY_ID
+        })
     except Exception as e:
-        app.logger.error(f"Error creating order: {e}")
+        app.logger.error(f"Error creating Razorpay order: {e}")
         return jsonify({"error": "Could not create payment order."}), 500
 
-@app.route("/cashfree-webhook", methods=['POST'])
-def cashfree_webhook():
-    """Handles incoming webhooks from Cashfree."""
-    app.logger.info("--- Webhook Received ---")
+@app.route("/razorpay-webhook", methods=['POST'])
+def razorpay_webhook():
+    """Webhook endpoint to handle Razorpay payment confirmations."""
     try:
-        raw_body = request.get_data()
-        received_signature = request.headers.get('x-webhook-signature')
-        timestamp = request.headers.get('x-webhook-timestamp')
+        # Get the raw request data
+        raw_data = request.get_data()
+        signature = request.headers.get('X-Razorpay-Signature')
 
-        if not received_signature or not timestamp or not CASHFREE_WEBHOOK_SECRET:
-            app.logger.error("Webhook missing headers or server-side secret key.")
-            return jsonify({"error": "Configuration error"}), 400
+        if not signature:
+            app.logger.error("No signature provided in webhook")
+            return jsonify({"error": "No signature"}), 400
 
-        payload = f"{timestamp}{raw_body.decode('utf-8')}"
-        computed_signature = hmac.new(key=CASHFREE_WEBHOOK_SECRET.encode('utf-8'), msg=payload.encode('utf-8'), digestmod=hashlib.sha256).hexdigest()
+        # Verify the webhook signature
+        expected_signature = hmac.new(
+            RAZORPAY_WEBHOOK_SECRET.encode(),
+            raw_data,
+            hashlib.sha256
+        ).hexdigest()
 
-        if not hmac.compare_digest(computed_signature, received_signature):
-            app.logger.error("Webhook signature verification failed.")
-            return jsonify({"error": "Signature mismatch"}), 400
-        
-        app.logger.info("Webhook signature verified successfully!")
-        
+        if not hmac.compare_digest(signature, expected_signature):
+            app.logger.error("Invalid webhook signature")
+            return jsonify({"error": "Invalid signature"}), 400
+
+        # Parse the webhook data
         webhook_data = request.get_json()
-        order_data = webhook_data.get('data', {}).get('order', {})
-        payment_status = order_data.get('order_status')
-        
-        if payment_status == 'PAID':
-            user_id = order_data.get('order_tags', {}).get('internal_user_id')
-            if user_id:
-                order_note = order_data.get('order_note', '')
-                if "Annual Subscription" in order_note:
-                    keys_query = firebase.db.collection('activation_keys').where('status', '==', 'UNUSED').limit(1).get()
-                    if keys_query:
-                        key_doc = keys_query[0]
-                        firebase.activate_user(user_id, key_doc.id)
-                elif "File Credits" in order_note:
-                    amount = float(order_data.get('order_amount', 0))
-                    credits_to_add = int(amount)
-                    firebase.add_user_credits(user_id, credits_to_add)
-        
-        return jsonify({"status": "ok"}), 200
+        app.logger.info(f"Received Razorpay webhook: {webhook_data}")
+
+        # Process the payment based on the event type
+        event = webhook_data.get('event')
+
+        if event == 'payment.captured':
+            payment_entity = webhook_data.get('payload', {}).get('payment', {}).get('entity', {})
+            order_id = payment_entity.get('order_id')
+            payment_id = payment_entity.get('id')
+            amount = payment_entity.get('amount')  # Amount in paise
+
+            # Get order details to find user ID
+            try:
+                order_details = razorpay_client.order.fetch(order_id)
+                notes = order_details.get('notes', {})
+                user_id = notes.get('user_id')
+
+                if not user_id:
+                    app.logger.error("No user ID found in order notes")
+                    return jsonify({"error": "No user ID"}), 400
+
+                # Convert amount from paise to rupees and calculate credits
+                amount_rupees = int(amount) / 100
+                credits = int(amount_rupees)  # ₹1 per credit
+
+                # Add credits to user account
+                success, result = firebase.add_user_credits(user_id, credits)
+
+                if success:
+                    app.logger.info(f"Successfully added {credits} credits to user {user_id}")
+                    return jsonify({"status": "success"}), 200
+                else:
+                    app.logger.error(f"Failed to add credits: {result}")
+                    return jsonify({"error": "Failed to add credits"}), 500
+
+            except Exception as order_error:
+                app.logger.error(f"Error fetching order details: {order_error}")
+                return jsonify({"error": "Order fetch failed"}), 500
+
+        return jsonify({"status": "ignored"}), 200
 
     except Exception as e:
-        app.logger.error("--- An error occurred in the webhook handler ---")
-        app.logger.error(traceback.format_exc())
-        return jsonify({"error": "Webhook processing error"}), 500
+        app.logger.error(f"Webhook error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route("/process", methods=["POST"])
 def process_document():
@@ -693,3 +704,4 @@ def google_auth():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
