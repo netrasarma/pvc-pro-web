@@ -12,3 +12,4 @@ PyMuPDF
 opencv-python-headless
 numpy
 scipy
+razorpay
