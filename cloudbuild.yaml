@@ -42,9 +42,9 @@ jobs:
           --platform managed \
           --region us-central1 \
           --allow-unauthenticated \
-          --set-env-vars "CASHFREE_APP_ID=${{ secrets.CASHFREE_APP_ID }}" \
-          --set-env-vars "CASHFREE_SECRET_KEY=${{ secrets.CASHFREE_SECRET_KEY }}" \
-          --set-env-vars "CASHFREE_WEBHOOK_SECRET=${{ secrets.CASHFREE_WEBHOOK_SECRET }}" \
+          --set-env-vars "RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}" \
+          --set-env-vars "RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}" \
+          --set-env-vars "RAZORPAY_WEBHOOK_SECRET=${{ secrets.RAZORPAY_WEBHOOK_SECRET }}" \
           --set-env-vars "FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}" \
           --set-env-vars "FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }}" \
           --set-env-vars "FIREBASE_AUTH_DOMAIN=${{ secrets.FIREBASE_AUTH_DOMAIN }}" \
