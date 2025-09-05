@@ -6,6 +6,7 @@ firebase-admin
 pyrebase4
 psutil
 google-cloud-secret-manager
+python-dotenv
 Pillow
 PyMuPDF
 opencv-python

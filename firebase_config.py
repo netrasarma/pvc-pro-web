@@ -7,6 +7,10 @@ import datetime
 import platform
 import os
 import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Get Firebase configuration from environment variables (set by secret manager)
 def get_firebase_config():
@@ -55,17 +59,17 @@ def get_firebase_config():
             "appId": "1:432888002709:web:06951cd41559f17f42039c"
         }
 
-# Get Firebase service account key from environment variable or secret manager
+# Get Firebase service account key from .env file or environment variable
 def get_firebase_service_account():
-    """Get Firebase service account key from environment or secret manager only"""
+    """Get Firebase service account key from .env file or environment variable"""
     try:
-        # Try to get from environment variable first
+        # Try to get from environment variable first (.env file or system env)
         service_account_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON')
         if service_account_json:
             print("Loading Firebase service account from environment variable.")
             return json.loads(service_account_json)
 
-        # Try to get from secret manager (Google Cloud)
+        # Try to get from secret manager (Google Cloud) as fallback
         try:
             from google.cloud import secretmanager_v1
             client = secretmanager_v1.SecretManagerServiceClient()
@@ -81,7 +85,7 @@ def get_firebase_service_account():
         except Exception as e:
             print(f"Could not get Firebase service account from secret manager: {e}")
 
-        print("Error: No Firebase service account found. Please set FIREBASE_SERVICE_ACCOUNT_JSON environment variable or ensure firebase-service-account secret exists in Google Cloud Secret Manager.")
+        print("Error: No Firebase service account found. Please set FIREBASE_SERVICE_ACCOUNT_JSON in your .env file or environment variables.")
         return None
 
     except Exception as e:
