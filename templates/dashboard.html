@@ -6,7 +6,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}?v=1.0.1">
     <script id="user-data" type="application/json">
         {
             "userLoggedIn": {{ 'true' if session.get('user') else 'false' }},
@@ -468,8 +468,8 @@
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-xl font-semibold text-gray-800">Password Required</h3>
                 <button onclick="document.getElementById('passwordPromptModal').classList.add('hidden')" class="text-gray-500 hover:text-gray-700 transition-colors">
-                    <svg class="w-6极速飞艇开奖直播 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18极速飞艇开奖直播 6M6 6l12 12"></path>
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
                 </button>
             </div>
@@ -489,6 +489,6 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='dashboard.js') }}?v=1.0.1"></script>
 </body>
 </html>
