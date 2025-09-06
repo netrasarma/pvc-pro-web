@@ -24,9 +24,9 @@ app.secret_key = 'pvc-pro-a-very-secret-and-random-key-12345'
 
 # --- Environment Variables ---
 # These are loaded from your Cloud Run service settings
-CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID", "TEST10706130355171b46e4f39f0577103160701")
-CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY", "cfsk_ma_test_ba5c7c70b314237dae02f81c2feb72a5_7142205c")
-CASHFREE_ENVIRONMENT = os.getenv("CASHFREE_ENVIRONMENT", "TEST")  # TEST or PROD
+CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID")
+CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY")
+CASHFREE_ENVIRONMENT = os.getenv("CASHFREE_ENVIRONMENT", "PROD")  # Default to PROD for production
 
 # Log current credentials for debugging
 app.logger.info(f"Using Cashfree App ID: {CASHFREE_APP_ID}")
@@ -289,8 +289,8 @@ def create_cashfree_order():
                 "customer_phone": user_mobile
             },
             "order_meta": {
-                "return_url": "http://127.0.0.1:8080/dashboard",
-                "notify_url": "http://127.0.0.1:8080/cashfree-webhook"
+                "return_url": "https://pvcpro.online/dashboard",
+                "notify_url": "https://pvcpro.online/cashfree-webhook"
             },
             "order_note": "Credit purchase for PVC Maker Pro"
         }
