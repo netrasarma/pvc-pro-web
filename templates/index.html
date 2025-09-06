@@ -759,7 +759,7 @@
             }
 
             const options = {
-                key: orderData.key,
+                key: orderData.key ? orderData.key : "{{ RAZORPAY_KEY_ID }}",
                 amount: orderData.amount,
                 currency: orderData.currency,
                 name: 'PVC Pro',
