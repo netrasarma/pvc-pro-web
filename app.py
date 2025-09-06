@@ -283,6 +283,68 @@ def create_razorpay_order():
         app.logger.error(f"Error creating Razorpay order: {e}", exc_info=True)
         return jsonify({"error": "Could not create payment order."}), 500
 
+@app.route("/verify_razorpay_payment", methods=["POST"])
+def verify_razorpay_payment():
+    """API endpoint to verify Razorpay payment and add credits to user account."""
+    if 'user' not in session:
+        app.logger.error("User not logged in when verifying Razorpay payment")
+        return jsonify({"error": "User not logged in"}), 401
+
+    data = request.json
+    app.logger.info(f"Received verify_razorpay_payment request data: {data}")
+
+    razorpay_order_id = data.get("razorpay_order_id")
+    razorpay_payment_id = data.get("razorpay_payment_id")
+    razorpay_signature = data.get("razorpay_signature")
+    amount = data.get("amount")
+
+    if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature, amount]):
+        app.logger.error("Missing required payment verification data")
+        return jsonify({"error": "Missing payment verification data"}), 400
+
+    try:
+        if not razorpay_client:
+            app.logger.error("Razorpay client not initialized")
+            return jsonify({"error": "Payment service not configured"}), 500
+
+        # Verify the payment signature
+        params_dict = {
+            'razorpay_order_id': razorpay_order_id,
+            'razorpay_payment_id': razorpay_payment_id,
+            'razorpay_signature': razorpay_signature
+        }
+
+        razorpay_client.utility.verify_payment_signature(params_dict)
+
+        # Fetch the order to get user ID from notes
+        order_details = razorpay_client.order.fetch(razorpay_order_id)
+        notes = order_details.get('notes', {})
+        user_id = notes.get('user_id')
+
+        if not user_id:
+            app.logger.error("No user ID found in order notes")
+            return jsonify({"error": "No user ID found"}), 400
+
+        # Convert amount from rupees to credits (₹1 = 1 credit)
+        credits_to_add = int(amount)
+
+        # Add credits to user account
+        success, result = firebase.add_user_credits(user_id, credits_to_add)
+
+        if success:
+            app.logger.info(f"Successfully added {credits_to_add} credits to user {user_id}")
+            return jsonify({"success": True, "message": f"Successfully added {credits_to_add} credits"}), 200
+        else:
+            app.logger.error(f"Failed to add credits: {result}")
+            return jsonify({"error": "Failed to add credits"}), 500
+
+    except razorpay.errors.SignatureVerificationError as e:
+        app.logger.error(f"Payment signature verification failed: {e}")
+        return jsonify({"error": "Payment verification failed"}), 400
+    except Exception as e:
+        app.logger.error(f"Error verifying Razorpay payment: {e}", exc_info=True)
+        return jsonify({"error": "Payment verification failed"}), 500
+
 @app.route("/razorpay-webhook", methods=['POST'])
 def razorpay_webhook():
     """Webhook endpoint to handle Razorpay payment confirmations."""
