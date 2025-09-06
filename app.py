@@ -253,6 +253,7 @@ def create_razorpay_order():
 
     try:
         if not razorpay_client:
+            app.logger.error("Payment service not configured")
             return jsonify({"error": "Payment service not configured"}), 500
 
         razorpay_order = razorpay_client.order.create({
@@ -266,10 +267,10 @@ def create_razorpay_order():
         app.logger.info(f"Created Razorpay order: {razorpay_order}")
 
         return jsonify({
-            "order_id": razorpay_order.get("id"),
+            "id": razorpay_order.get("id"),
             "amount": razorpay_order.get("amount"),
             "currency": razorpay_order.get("currency"),
-            "key_id": RAZORPAY_KEY_ID
+            "key": RAZORPAY_KEY_ID
         })
     except Exception as e:
         app.logger.error(f"Error creating Razorpay order: {e}")
