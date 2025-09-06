@@ -242,14 +242,21 @@ def logout():
 def create_razorpay_order():
     """API endpoint to create a Razorpay payment order."""
     if 'user' not in session:
+        app.logger.error("User not logged in when creating Razorpay order")
         return jsonify({"error": "User not logged in"}), 401
 
     data = request.json
+    app.logger.info(f"Received create_razorpay_order request data: {data}")
+
     user_id = session['user']['uid']
 
     amount = data.get("amount")
     currency = data.get("currency", "INR")
     receipt = data.get("receipt", f"receipt_{uuid.uuid4().hex}")
+
+    if not amount or not isinstance(amount, int) or amount <= 0:
+        app.logger.error(f"Invalid amount received: {amount}")
+        return jsonify({"error": "Invalid amount"}), 400
 
     try:
         if not razorpay_client:
@@ -273,7 +280,7 @@ def create_razorpay_order():
             "key": RAZORPAY_KEY_ID
         })
     except Exception as e:
-        app.logger.error(f"Error creating Razorpay order: {e}")
+        app.logger.error(f"Error creating Razorpay order: {e}", exc_info=True)
         return jsonify({"error": "Could not create payment order."}), 500
 
 @app.route("/razorpay-webhook", methods=['POST'])
