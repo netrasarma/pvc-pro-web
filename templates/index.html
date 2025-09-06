@@ -728,26 +728,28 @@
 
             async function fetchRazorpayOrder() {
                 try {
-                    const backendUrl = '/create_razorpay_order';
-                    const response = await fetch(backendUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            amount: Math.round(amount) * 100, // Convert to paisa, rounding to nearest integer
-                            currency: 'INR'
-                        })
-                    });
+            const backendUrl = '/create_razorpay_order';
+            console.log("Initiating payment with amount (paisa):", Math.round(amount) * 100);
+            const response = await fetch(backendUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    amount: Math.round(amount) * 100, // Convert to paisa, rounding to nearest integer
+                    currency: 'INR'
+                })
+            });
 
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Server error');
-                    }
-                    return data;
-                } catch (error) {
-                    console.error('Error fetching Razorpay order:', error);
-                    alert(`Could not initiate payment. ${error.message}`);
-                    return null;
-                }
+            const data = await response.json();
+            console.log("Response from create_razorpay_order:", data);
+            if (!response.ok) {
+                throw new Error(data.error || 'Server error');
+            }
+            return data;
+        } catch (error) {
+            console.error('Error fetching Razorpay order:', error);
+            alert(`Could not initiate payment. ${error.message}`);
+            return null;
+        }
             }
 
             const orderData = await fetchRazorpayOrder();
