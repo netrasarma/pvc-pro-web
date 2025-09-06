@@ -277,7 +277,7 @@ def create_razorpay_order():
             "id": razorpay_order.get("id"),
             "amount": razorpay_order.get("amount"),
             "currency": razorpay_order.get("currency"),
-            "key": RAZORPAY_KEY_ID
+            "key_id": RAZORPAY_KEY_ID
         })
     except Exception as e:
         app.logger.error(f"Error creating Razorpay order: {e}", exc_info=True)
