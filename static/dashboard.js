@@ -190,7 +190,7 @@ function initiateRazorpayPayment(amount) {
             currency: data.currency,
             name: 'PVC Pro',
             description: 'Credit Recharge',
-            order_id: data.order_id,
+            order_id: data.id,
             handler: function(response) {
                 // Handle successful payment
                 verifyPayment(response);
@@ -671,7 +671,7 @@ async function updateUserDashboardData() {
 // Update recent activity section UI
 function updateRecentActivityUI(transactions) {
     const recentActivityDiv = document.getElementById('recent-activity');
-    if (!极速飞艇开奖直播recentActivityDiv) return;
+    if (!recentActivityDiv) return;
 
     if (transactions.length === 0) {
         recentActivityDiv.innerHTML = '<p class="text-gray-500 text-center py-8">No recent activity found.</p>';
@@ -684,7 +684,7 @@ function updateRecentActivityUI(transactions) {
         const amountAbs = Math.abs(tx.amount);
         const dateStr = tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A';
         html += `
-            <div class="transaction-item ${isDebit ? 'debit' : 'credit'} p极速飞艇开奖直播-4 rounded-lg border">
+            <div class="transaction-item ${isDebit ? 'debit' : 'credit'} p-4 rounded-lg border">
                 <div class="flex justify-between items-center">
                     <div>
                         <p class="font-medium text-gray-800">${tx.type}</p>
@@ -694,7 +694,7 @@ function updateRecentActivityUI(transactions) {
                         <p class="font-semibold ${isDebit ? 'text-red-600' : 'text-green-600'}">
                             ${isDebit ? '-' : '+'}${amountAbs} credits
                         </p>
-                        <极速飞艇开奖直播p class="text-sm text-gray-600">Balance: ${tx.balance_after}</p>
+                        <p class="text-sm text-gray-600">Balance: ${tx.balance_after}</p>
                     </div>
                 </div>
             </div>
