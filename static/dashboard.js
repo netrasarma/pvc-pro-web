@@ -139,25 +139,33 @@ function formatFileSize(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Payment Integration (Razorpay)
+// Payment Integration (Cashfree)
 document.getElementById('recharge-amount-form').addEventListener('submit', function (e) {
     e.preventDefault();
     const amountInput = document.getElementById('recharge-amount');
     const amount = parseInt(amountInput.value, 10);
-    
+
     if (isNaN(amount) || amount < 100) {
         alert('Please enter a valid amount of at least ₹100.');
         return;
     }
-    
+
     hideRechargeAmountInput();
-    initiateRazorpayPayment(amount);
+    initiateCashfreePayment(amount);
 });
 
-function initiateRazorpayPayment(amount) {
+function initiateCashfreePayment(amount) {
     if (!window.userLoggedIn) {
         alert("Please log in to make a payment.");
         window.location.href = '/login';
+        return;
+    }
+
+    // Check if mobile number is available
+    if (!window.userMobile || window.userMobile.trim() === '') {
+        // Store the payment amount for later use
+        window.pendingPaymentAmount = amount;
+        showMobileNumberModal();
         return;
     }
 
@@ -165,13 +173,13 @@ function initiateRazorpayPayment(amount) {
     showPaymentProcessing();
 
     // Create order on server
-    fetch('/create_razorpay_order', {
+    fetch('/create_cashfree_order', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            amount: amount * 100, // Razorpay expects amount in paise
+            amount: amount, // Cashfree expects amount in rupees
             currency: 'INR',
             receipt: 'credit_recharge_' + Date.now()
         })
@@ -184,29 +192,39 @@ function initiateRazorpayPayment(amount) {
             return;
         }
 
-        const options = {
-            key: data.key_id, // Your Razorpay Key ID from server
-            amount: data.amount,
-            currency: data.currency,
-            name: 'PVC Pro',
-            description: 'Credit Recharge',
-            order_id: data.id,
-            handler: function(response) {
-                // Handle successful payment
-                verifyPayment(response);
-            },
-            prefill: {
-                name: window.userName || '',
-                email: window.userEmail || '',
-                contact: window.userMobile || ''
-            },
-            theme: {
-                color: '#2563eb'
-            }
+        // Initialize Cashfree checkout
+        const checkoutOptions = {
+            paymentSessionId: data.id, // This should be the payment session ID from Cashfree
+            redirectTarget: "_modal",
         };
 
-        const rzp = new Razorpay(options);
-        rzp.open();
+        // Load Cashfree SDK if not already loaded
+        if (!window.Cashfree) {
+            const script = document.createElement('script');
+            script.src = 'https://sdk.cashfree.com/js/v3/cashfree.js';
+            script.onload = function() {
+                window.Cashfree = Cashfree({
+                    mode: "sandbox" // Change to "production" for live
+                });
+                proceedWithPayment(checkoutOptions);
+            };
+            document.head.appendChild(script);
+        } else {
+            proceedWithPayment(checkoutOptions);
+        }
+
+        function proceedWithPayment(options) {
+            window.Cashfree.checkout(options).then(function(result) {
+                if (result.error) {
+                    hidePaymentProcessing();
+                    alert('Payment failed: ' + result.error.message);
+                } else if (result.paymentDetails) {
+                    // Payment successful
+                    verifyCashfreePayment(result.paymentDetails);
+                }
+            });
+        }
+
         hidePaymentProcessing();
     })
     .catch(error => {
@@ -216,18 +234,17 @@ function initiateRazorpayPayment(amount) {
     });
 }
 
-function verifyPayment(paymentResponse) {
+function verifyCashfreePayment(paymentDetails) {
     showPaymentProcessing();
-    
-    fetch('/verify_razorpay_payment', {
+
+    fetch('/verify_cashfree_payment', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            razorpay_order_id: paymentResponse.razorpay_order_id,
-            razorpay_payment_id: paymentResponse.razorpay_payment_id,
-            razorpay_signature: paymentResponse.razorpay_signature,
+            order_id: paymentDetails.orderId,
+            payment_id: paymentDetails.paymentId,
             amount: currentPaymentAmount
         })
     })
@@ -500,6 +517,62 @@ function hideContactSupport() {
     document.getElementById('contactSupportModal').classList.add('hidden');
 }
 
+function showMobileNumberModal() {
+    document.getElementById('mobileNumberModal').classList.remove('hidden');
+    document.getElementById('mobile-number-input').value = window.userMobile || '';
+    document.getElementById('mobile-number-input').focus();
+}
+
+function hideMobileNumberModal() {
+    document.getElementById('mobileNumberModal').classList.add('hidden');
+}
+
+function saveMobileNumber() {
+    const mobileInput = document.getElementById('mobile-number-input');
+    const mobile = mobileInput.value.trim();
+
+    if (!mobile || mobile.length < 10) {
+        alert('Please enter a valid 10-digit mobile number.');
+        return;
+    }
+
+    // Validate mobile number format (10 digits)
+    if (!/^\d{10}$/.test(mobile)) {
+        alert('Please enter a valid 10-digit mobile number (numbers only).');
+        return;
+    }
+
+    // Save mobile number via API
+    fetch('/api/update_mobile', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ mobile: mobile })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update local user data
+            window.userMobile = mobile;
+            hideMobileNumberModal();
+
+            // Proceed with payment if this was called from payment flow
+            if (window.pendingPaymentAmount) {
+                const amount = window.pendingPaymentAmount;
+                window.pendingPaymentAmount = null;
+                initiateCashfreePayment(amount);
+            }
+        } else {
+            alert('Failed to save mobile number: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error saving mobile number:', error);
+        alert('Failed to save mobile number. Please try again.');
+    });
+}
+
 // Profile Settings Form Submission
 document.getElementById('profile-settings-form')?.addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -577,14 +650,15 @@ document.getElementById('contact-support-form')?.addEventListener('submit', asyn
 document.addEventListener('click', function(e) {
     const modals = [
         'purchaseHistoryModal',
-        'profileSettingsModal', 
+        'profileSettingsModal',
         'helpCenterModal',
         'contactSupportModal',
         'rechargeAmountModal',
         'paymentProcessingModal',
-        'paymentSuccessModal'
+        'paymentSuccessModal',
+        'mobileNumberModal'
     ];
-    
+
     modals.forEach(modalId => {
         const modal = document.getElementById(modalId);
         if (modal && !modal.classList.contains('hidden') && e.target === modal) {
@@ -610,6 +684,9 @@ document.addEventListener('click', function(e) {
                 case 'paymentSuccessModal':
                     hidePaymentSuccessModal();
                     break;
+                case 'mobileNumberModal':
+                    hideMobileNumberModal();
+                    break;
             }
         }
     });
@@ -628,6 +705,8 @@ document.addEventListener('keydown', function(e) {
             hideContactSupport();
         } else if (!document.getElementById('rechargeAmountModal').classList.contains('hidden')) {
             hideRechargeAmountInput();
+        } else if (!document.getElementById('mobileNumberModal').classList.contains('hidden')) {
+            hideMobileNumberModal();
         }
     }
 });
