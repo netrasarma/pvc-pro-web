@@ -1,5 +1,5 @@
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 import fitz  # PyMuPDF
 import cv2
 import numpy as np
@@ -20,6 +20,35 @@ class AadharProcessor:
         self.cropped_back = None
         self.pvc_width = 1012
         self.pvc_height = 638
+
+    def enhance_image_quality(self, image):
+        """Enhance image quality to improve text clarity and reduce blurriness"""
+        try:
+            # Convert to OpenCV format for processing
+            cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+            # Apply bilateral filter to reduce noise while preserving edges
+            filtered = cv2.bilateralFilter(cv_image, 9, 75, 75)
+
+            # Convert back to PIL
+            enhanced_pil = Image.fromarray(cv2.cvtColor(filtered, cv2.COLOR_BGR2RGB))
+
+            # Apply PIL enhancements
+            # Increase contrast
+            enhancer = ImageEnhance.Contrast(enhanced_pil)
+            enhanced_pil = enhancer.enhance(1.2)
+
+            # Increase sharpness
+            enhancer = ImageEnhance.Sharpness(enhanced_pil)
+            enhanced_pil = enhancer.enhance(1.5)
+
+            # Apply unsharp mask for better text clarity
+            enhanced_pil = enhanced_pil.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
+
+            return enhanced_pil
+        except Exception as e:
+            print(f"Image enhancement failed: {e}")
+            return image
 
     def process(self):
         try:
@@ -55,14 +84,16 @@ class AadharProcessor:
 
         if len(self.pdf_document) >= 1:
             page = self.pdf_document[0]
-            pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+            # Set resolution to approximately 600 DPI for high quality text
+            # 600 DPI / 72 DPI (default PDF DPI) = 8.33x scaling
+            pix = page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
             img_data = pix.tobytes("ppm")
             full_image = Image.open(io.BytesIO(img_data))
 
             if len(self.pdf_document) >= 2:
                 self.front_image = full_image
                 page = self.pdf_document[1]
-                pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+                pix = page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
                 img_data = pix.tobytes("ppm")
                 self.back_image = Image.open(io.BytesIO(img_data))
             else:
@@ -100,10 +131,14 @@ class AadharProcessor:
     def auto_crop(self):
         if self.front_image:
             self.cropped_front = self.crop_aadhar_card(self.front_image)
+            # Apply image enhancement to improve text clarity
+            self.cropped_front = self.enhance_image_quality(self.cropped_front)
             if self.add_mobile and self.mobile_number:
                 self.cropped_front = self.add_mobile_number(self.cropped_front)
         if self.back_image:
             self.cropped_back = self.crop_aadhar_card(self.back_image)
+            # Apply image enhancement to improve text clarity
+            self.cropped_back = self.enhance_image_quality(self.cropped_back)
 
     def crop_aadhar_card(self, image):
         cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
@@ -228,6 +263,35 @@ class PanProcessor:
         self.cropped_back = None
         self.pvc_width = 1012
         self.pvc_height = 638
+
+    def enhance_image_quality(self, image):
+        """Enhance image quality to improve text clarity and reduce blurriness"""
+        try:
+            # Convert to OpenCV format for processing
+            cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+            # Apply bilateral filter to reduce noise while preserving edges
+            filtered = cv2.bilateralFilter(cv_image, 9, 75, 75)
+
+            # Convert back to PIL
+            enhanced_pil = Image.fromarray(cv2.cvtColor(filtered, cv2.COLOR_BGR2RGB))
+
+            # Apply PIL enhancements
+            # Increase contrast
+            enhancer = ImageEnhance.Contrast(enhanced_pil)
+            enhanced_pil = enhancer.enhance(1.2)
+
+            # Increase sharpness
+            enhancer = ImageEnhance.Sharpness(enhanced_pil)
+            enhanced_pil = enhancer.enhance(1.5)
+
+            # Apply unsharp mask for better text clarity
+            enhanced_pil = enhanced_pil.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
+
+            return enhanced_pil
+        except Exception as e:
+            print(f"Image enhancement failed: {e}")
+            return image
     def process(self):
         try:
             self.load_pdf()
@@ -262,10 +326,12 @@ class PanProcessor:
                     # Attempt to use a default password if none is provided
                     if not self.pdf_document.authenticate(""):
                         raise Exception("PDF is password protected and the provided password is not correct.")
-            
+
             if len(self.pdf_document) > 0:
                 page = self.pdf_document[0]
-                pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+                # Set resolution to approximately 600 DPI for high quality text
+                # 600 DPI / 72 DPI (default PDF DPI) = 8.33x scaling
+                pix = page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
                 img_data = pix.tobytes("ppm")
                 self.full_image = Image.open(io.BytesIO(img_data))
 
@@ -278,7 +344,7 @@ class PanProcessor:
 
         # Convert PIL image to OpenCV format for computer vision processing
         cv_image = cv2.cvtColor(np.array(self.full_image), cv2.COLOR_RGB2BGR)
-        
+
         # Use advanced computer vision to detect PAN card boundaries
         try:
             # First try the advanced contour detection method
@@ -401,6 +467,10 @@ class PanProcessor:
             # Convert back to PIL format
             self.cropped_front = Image.fromarray(cv2.cvtColor(front_crop, cv2.COLOR_BGR2RGB))
             self.cropped_back = Image.fromarray(cv2.cvtColor(back_crop, cv2.COLOR_BGR2RGB))
+
+            # Apply image enhancement to improve text clarity
+            self.cropped_front = self.enhance_image_quality(self.cropped_front)
+            self.cropped_back = self.enhance_image_quality(self.cropped_back)
             
             print(f"Advanced PAN detection successful: found {len(unique_candidates)} candidates")
             return True
@@ -560,10 +630,11 @@ class VoterProcessor:
                 if not self.password or not self.pdf_document.authenticate(self.password):
                     if not self.pdf_document.authenticate(""):
                         raise Exception("PDF is password protected and the provided password is not correct.")
-            
+
             if len(self.pdf_document) > 0:
                 page = self.pdf_document[0]
-                pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+                # Set resolution to approximately 600 DPI for high quality text
+                pix = page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
                 img_data = pix.tobytes("ppm")
                 self.full_image = Image.open(io.BytesIO(img_data))
 
@@ -715,14 +786,16 @@ class DLProcessor:
 
         if len(self.pdf_document) >= 1:
             front_page = self.pdf_document[0]
-            front_pix = front_page.get_pixmap(matrix=fitz.Matrix(3, 3))
+            # Set resolution to approximately 600 DPI for high quality text
+            front_pix = front_page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
             front_img_data = front_pix.tobytes("ppm")
             front_full_image = Image.open(io.BytesIO(front_img_data))
             self.front_image = self.crop_dl_page(front_full_image, "front")
 
         if len(self.pdf_document) >= 2:
             back_page = self.pdf_document[1]
-            back_pix = back_page.get_pixmap(matrix=fitz.Matrix(3, 3))
+            # Set resolution to approximately 600 DPI for high quality text
+            back_pix = back_page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
             back_img_data = back_pix.tobytes("ppm")
             back_full_image = Image.open(io.BytesIO(back_img_data))
             self.back_image = self.crop_dl_page(back_full_image, "back")
@@ -805,14 +878,16 @@ class RCProcessor:
 
         if len(self.pdf_document) >= 1:
             front_page = self.pdf_document[0]
-            front_pix = front_page.get_pixmap(matrix=fitz.Matrix(3, 3))
+            # Set resolution to approximately 600 DPI for high quality text
+            front_pix = front_page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
             front_img_data = front_pix.tobytes("ppm")
             front_full_image = Image.open(io.BytesIO(front_img_data))
             self.front_image = self.crop_rc_page(front_full_image, "front")
 
         if len(self.pdf_document) >= 2:
             back_page = self.pdf_document[1]
-            back_pix = back_page.get_pixmap(matrix=fitz.Matrix(3, 3))
+            # Set resolution to approximately 600 DPI for high quality text
+            back_pix = back_page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
             back_img_data = back_pix.tobytes("ppm")
             back_full_image = Image.open(io.BytesIO(back_img_data))
             self.back_image = self.crop_rc_page(back_full_image, "back")
@@ -886,10 +961,11 @@ class ABHAProcessor:
                 if not self.password or not self.pdf_document.authenticate(self.password):
                     if not self.pdf_document.authenticate(""):
                         raise Exception("PDF is password protected and the provided password is not correct.")
-            
+
             if len(self.pdf_document) > 0:
                 page = self.pdf_document[0]
-                pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+                # Set resolution to approximately 600 DPI for high quality text
+                pix = page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
                 img_data = pix.tobytes("ppm")
                 self.full_image = Image.open(io.BytesIO(img_data))
 
@@ -974,10 +1050,11 @@ class AyushmanProcessor:
                 if not self.password or not self.pdf_document.authenticate(self.password):
                     if not self.pdf_document.authenticate(""):
                         raise Exception("PDF is password protected and the provided password is not correct.")
-            
+
             if len(self.pdf_document) > 0:
                 page = self.pdf_document[0]
-                pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+                # Set resolution to approximately 600 DPI for high quality text
+                pix = page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
                 img_data = pix.tobytes("ppm")
                 self.full_image = Image.open(io.BytesIO(img_data))
 
@@ -1075,10 +1152,11 @@ class EshramProcessor:
                 if not self.password or not self.pdf_document.authenticate(self.password):
                     if not self.pdf_document.authenticate(""):
                         raise Exception("PDF is password protected and the provided password is not correct.")
-            
+
             if len(self.pdf_document) > 0:
                 page = self.pdf_document[0]
-                pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+                # Set resolution to approximately 600 DPI for high quality text
+                pix = page.get_pixmap(matrix=fitz.Matrix(8.33, 8.33))
                 img_data = pix.tobytes("ppm")
                 self.full_image = Image.open(io.BytesIO(img_data))
 
