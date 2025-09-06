@@ -12,4 +12,5 @@ PyMuPDF
 opencv-python-headless
 numpy
 scipy
-razorpay
+cashfree-pg-sdk
+
