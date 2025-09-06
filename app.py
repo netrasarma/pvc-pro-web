@@ -14,7 +14,7 @@ import requests
 import io
 import base64
 from document_processor import AadharProcessor, PanProcessor, VoterProcessor, DLProcessor, RCProcessor, ABHAProcessor, AyushmanProcessor, EshramProcessor
-import razorpay
+import cashfree_pg as cf
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)
@@ -26,24 +26,32 @@ app.secret_key = 'pvc-pro-a-very-secret-and-random-key-12345'
 
 # --- Environment Variables ---
 # These are loaded from your Cloud Run service settings
-RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
-RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
-RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID", "TEST10706130355171b46e4f39f0577103160701")
+CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY", "cfsk_ma_test_ba5c7c70b314237dae02f81c2feb72a5_7142205c")
+CASHFREE_ENVIRONMENT = os.getenv("CASHFREE_ENVIRONMENT", "TEST")  # TEST or PROD
 
-# Initialize Razorpay client
-if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
-    razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-    app.logger.info("Razorpay client initialized successfully")
+# Log current credentials for debugging
+app.logger.info(f"Using Cashfree App ID: {CASHFREE_APP_ID}")
+app.logger.info(f"Cashfree Environment: {CASHFREE_ENVIRONMENT}")
+
+# Initialize Cashfree client
+if CASHFREE_APP_ID and CASHFREE_SECRET_KEY:
+    from cashfree_pg.api_client import Cashfree
+    Cashfree.XClientId = CASHFREE_APP_ID
+    Cashfree.XClientSecret = CASHFREE_SECRET_KEY
+    Cashfree.XEnvironment = CASHFREE_ENVIRONMENT.lower()
+    cf_client = Cashfree
+    app.logger.info("Cashfree client initialized successfully")
 else:
-    app.logger.error("Razorpay credentials not configured")
-    razorpay_client = None
+    app.logger.error("Cashfree credentials not configured")
+    cf_client = None
 
 # --- Main Routes (Pages) ---
 
 @app.route("/")
 def render_homepage():
     """Renders the main homepage."""
-    return render_template('index.html', RAZORPAY_KEY_ID=RAZORPAY_KEY_ID)
+    return render_template('index.html', CASHFREE_APP_ID=CASHFREE_APP_ID)
 
 @app.route("/login", methods=['GET', 'POST'])
 def login():
@@ -192,9 +200,9 @@ def dashboard():
             if user_data.get('is_locked', False):
                 admin_contact = "officialnetrasarma@gmail.com"
                 lock_message = f"Your account is locked. Please contact admin at {admin_contact} to unlock."
-                return render_template('dashboard.html', user=user_data, lock_message=lock_message, transactions=transactions, RAZORPAY_KEY_ID=RAZORPAY_KEY_ID)
+                return render_template('dashboard.html', user=user_data, lock_message=lock_message, transactions=transactions, CASHFREE_APP_ID=CASHFREE_APP_ID)
 
-            return render_template('dashboard.html', user=user_data, transactions=transactions, RAZORPAY_KEY_ID=RAZORPAY_KEY_ID)
+    return render_template('dashboard.html', user=user_data, transactions=transactions, CASHFREE_APP_ID=CASHFREE_APP_ID)
     return redirect(url_for('login'))
 
 @app.route("/change_password", methods=['GET', 'POST'])
@@ -238,131 +246,206 @@ def logout():
 
 # --- API and Webhook Routes ---
 
-@app.route("/create_razorpay_order", methods=["POST"])
-def create_razorpay_order():
-    """API endpoint to create a Razorpay payment order."""
+@app.route("/create_cashfree_order", methods=["POST"])
+def create_cashfree_order():
+    """API endpoint to create a Cashfree payment order."""
     if 'user' not in session:
-        app.logger.error("User not logged in when creating Razorpay order")
+        app.logger.error("User not logged in when creating Cashfree order")
         return jsonify({"error": "User not logged in"}), 401
 
     data = request.json
-    app.logger.info(f"Received create_razorpay_order request data: {data}")
+    app.logger.info(f"Received create_cashfree_order request data: {data}")
 
     user_id = session['user']['uid']
 
     amount = data.get("amount")
     currency = data.get("currency", "INR")
-    receipt = data.get("receipt", f"receipt_{uuid.uuid4().hex}")
+    order_id = data.get("receipt", f"receipt_{uuid.uuid4().hex}")
 
     if not amount or not isinstance(amount, int) or amount <= 0:
         app.logger.error(f"Invalid amount received: {amount}")
         return jsonify({"error": "Invalid amount"}), 400
 
     try:
-        if not razorpay_client:
+        if not cf_client:
             app.logger.error("Payment service not configured")
             return jsonify({"error": "Payment service not configured"}), 500
 
-        razorpay_order = razorpay_client.order.create({
-            "amount": amount,
-            "currency": currency,
-            "receipt": receipt,
-            "notes": {"user_id": user_id},
-            "payment_capture": 1
-        })
+        # Check if user has mobile number
+        user_mobile = session['user'].get('mobile', '')
+        if not user_mobile or len(user_mobile) < 10:
+            app.logger.info(f"User {user_id} missing mobile number, cannot proceed with payment")
+            return jsonify({"error": "Mobile number required for payment. Please update your profile."}), 400
 
-        app.logger.info(f"Created Razorpay order: {razorpay_order}")
+        # Create order using Cashfree REST API directly
+        import requests
 
-        return jsonify({
-            "id": razorpay_order.get("id"),
-            "amount": razorpay_order.get("amount"),
-            "currency": razorpay_order.get("currency"),
-            "key_id": RAZORPAY_KEY_ID
-        })
+        # Use sandbox endpoint for TEST environment
+        if CASHFREE_ENVIRONMENT.upper() == "TEST":
+            url = "https://sandbox.cashfree.com/pg/orders"
+        else:
+            url = "https://api.cashfree.com/pg/orders"
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-version": "2022-09-01",
+            "x-client-id": CASHFREE_APP_ID,
+            "x-client-secret": CASHFREE_SECRET_KEY
+        }
+
+        order_data = {
+            "order_id": order_id,
+            "order_amount": float(amount) / 100,  # Convert to rupees
+            "order_currency": currency,
+            "customer_details": {
+                "customer_id": user_id,
+                "customer_email": session['user'].get('email', ''),
+                "customer_phone": user_mobile
+            },
+            "order_meta": {
+                "return_url": "http://127.0.0.1:8080/dashboard",
+                "notify_url": "http://127.0.0.1:8080/cashfree-webhook"
+            },
+            "order_note": "Credit purchase for PVC Maker Pro"
+        }
+
+        try:
+            app.logger.info(f"Creating Cashfree order with data: {order_data}")
+            response = requests.post(url, json=order_data, headers=headers)
+            app.logger.info(f"Cashfree API response status: {response.status_code}")
+
+            if response.status_code == 200:
+                cashfree_order = response.json()
+                app.logger.info(f"Created Cashfree order: {cashfree_order}")
+
+                # Get payment session ID from the response
+                payment_session_id = cashfree_order.get("payment_session_id")
+                if not payment_session_id:
+                    app.logger.error("Payment session ID not found in Cashfree order response")
+                    return jsonify({"error": "Payment session ID not available"}), 500
+
+                return jsonify({
+                    "id": cashfree_order.get("order_id"),
+                    "amount": amount,
+                    "currency": currency,
+                    "app_id": CASHFREE_APP_ID,
+                    "payment_session_id": payment_session_id
+                })
+            else:
+                app.logger.error(f"Cashfree API error: {response.status_code} - {response.text}")
+                return jsonify({"error": "Failed to create payment order"}), 500
+
+        except Exception as api_error:
+            app.logger.error(f"Cashfree API error: {api_error}")
+            return jsonify({"error": "Failed to create payment order"}), 500
     except Exception as e:
-        app.logger.error(f"Error creating Razorpay order: {e}", exc_info=True)
+        app.logger.error(f"Error creating Cashfree order: {e}", exc_info=True)
         return jsonify({"error": "Could not create payment order."}), 500
 
-@app.route("/verify_razorpay_payment", methods=["POST"])
-def verify_razorpay_payment():
-    """API endpoint to verify Razorpay payment and add credits to user account."""
+@app.route("/verify_cashfree_payment", methods=["POST"])
+def verify_cashfree_payment():
+    """API endpoint to verify Cashfree payment and add credits to user account."""
     if 'user' not in session:
-        app.logger.error("User not logged in when verifying Razorpay payment")
+        app.logger.error("User not logged in when verifying Cashfree payment")
         return jsonify({"error": "User not logged in"}), 401
 
     data = request.json
-    app.logger.info(f"Received verify_razorpay_payment request data: {data}")
+    app.logger.info(f"Received verify_cashfree_payment request data: {data}")
 
-    razorpay_order_id = data.get("razorpay_order_id")
-    razorpay_payment_id = data.get("razorpay_payment_id")
-    razorpay_signature = data.get("razorpay_signature")
+    order_id = data.get("order_id")
+    payment_id = data.get("payment_id")
     amount = data.get("amount")
 
-    if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature, amount]):
+    if not all([order_id, payment_id, amount]):
         app.logger.error("Missing required payment verification data")
         return jsonify({"error": "Missing payment verification data"}), 400
 
     try:
-        if not razorpay_client:
-            app.logger.error("Razorpay client not initialized")
+        if not cf_client:
+            app.logger.error("Cashfree client not initialized")
             return jsonify({"error": "Payment service not configured"}), 500
 
-        # Verify the payment signature
-        params_dict = {
-            'razorpay_order_id': razorpay_order_id,
-            'razorpay_payment_id': razorpay_payment_id,
-            'razorpay_signature': razorpay_signature
+        # Fetch the order details from Cashfree using REST API
+        import requests
+
+        # Use sandbox endpoint for TEST environment
+        if CASHFREE_ENVIRONMENT.upper() == "TEST":
+            url = f"https://sandbox.cashfree.com/pg/orders/{order_id}"
+        else:
+            url = f"https://api.cashfree.com/pg/orders/{order_id}"
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-version": "2022-09-01",
+            "x-client-id": CASHFREE_APP_ID,
+            "x-client-secret": CASHFREE_SECRET_KEY
         }
 
-        razorpay_client.utility.verify_payment_signature(params_dict)
+        try:
+            app.logger.info(f"Fetching order details for: {order_id}")
+            response = requests.get(url, headers=headers)
+            app.logger.info(f"Order fetch response status: {response.status_code}")
 
-        # Fetch the order to get user ID from notes
-        order_details = razorpay_client.order.fetch(razorpay_order_id)
-        notes = order_details.get('notes', {})
-        user_id = notes.get('user_id')
+            if response.status_code == 200:
+                order_details = response.json()
+                app.logger.info(f"Order details fetched: {order_details}")
 
-        if not user_id:
-            app.logger.error("No user ID found in order notes")
-            return jsonify({"error": "No user ID found"}), 400
+                # Check if payment was successful
+                if order_details.get('order_status') == 'PAID':
+                    # Use the current session user
+                    user_id = session['user']['uid']
 
-        # Convert amount from rupees to credits (₹1 = 1 credit)
-        credits_to_add = int(amount)
+                    # Convert amount from rupees to credits (₹1 = 1 credit)
+                    credits_to_add = int(amount)
+                    app.logger.info(f"Adding {credits_to_add} credits to user {user_id}")
 
-        # Add credits to user account
-        success, result = firebase.add_user_credits(user_id, credits_to_add)
+                    # Add credits to user account
+                    success, result = firebase.add_user_credits(user_id, credits_to_add)
 
-        if success:
-            app.logger.info(f"Successfully added {credits_to_add} credits to user {user_id}")
-            return jsonify({"success": True, "message": f"Successfully added {credits_to_add} credits"}), 200
-        else:
-            app.logger.error(f"Failed to add credits: {result}")
-            return jsonify({"error": "Failed to add credits"}), 500
+                    if success:
+                        app.logger.info(f"Successfully added {credits_to_add} credits to user {user_id}")
+                        return jsonify({"success": True, "message": f"Successfully added {credits_to_add} credits"}), 200
+                    else:
+                        app.logger.error(f"Failed to add credits: {result}")
+                        return jsonify({"error": "Failed to add credits"}), 500
+                else:
+                    app.logger.error(f"Payment not successful. Order status: {order_details.get('order_status')}")
+                    return jsonify({"error": "Payment not successful"}), 400
+            else:
+                app.logger.error(f"Failed to fetch order details: {response.status_code} - {response.text}")
+                return jsonify({"error": "Failed to verify payment"}), 500
 
-    except razorpay.errors.SignatureVerificationError as e:
-        app.logger.error(f"Payment signature verification failed: {e}")
-        return jsonify({"error": "Payment verification failed"}), 400
+        except Exception as fetch_error:
+            app.logger.error(f"Error fetching order details: {fetch_error}")
+            return jsonify({"error": "Payment verification failed"}), 500
+
     except Exception as e:
-        app.logger.error(f"Error verifying Razorpay payment: {e}", exc_info=True)
+        app.logger.error(f"Error verifying Cashfree payment: {e}", exc_info=True)
         return jsonify({"error": "Payment verification failed"}), 500
 
-@app.route("/razorpay-webhook", methods=['POST'])
-def razorpay_webhook():
-    """Webhook endpoint to handle Razorpay payment confirmations."""
+@app.route("/cashfree-webhook", methods=['POST'])
+def cashfree_webhook():
+    """Webhook endpoint to handle Cashfree payment confirmations."""
     try:
+        app.logger.info("Cashfree webhook received")
         # Get the raw request data
         raw_data = request.get_data()
-        signature = request.headers.get('X-Razorpay-Signature')
+        signature = request.headers.get('x-cf-signature')
 
         if not signature:
             app.logger.error("No signature provided in webhook")
             return jsonify({"error": "No signature"}), 400
 
+        app.logger.info(f"Webhook signature: {signature[:10]}...")
+
         # Verify the webhook signature
         expected_signature = hmac.new(
-            RAZORPAY_WEBHOOK_SECRET.encode(),
+            CASHFREE_SECRET_KEY.encode(),
             raw_data,
             hashlib.sha256
         ).hexdigest()
+
+        app.logger.info(f"Expected signature: {expected_signature[:10]}...")
 
         if not hmac.compare_digest(signature, expected_signature):
             app.logger.error("Invalid webhook signature")
@@ -370,48 +453,65 @@ def razorpay_webhook():
 
         # Parse the webhook data
         webhook_data = request.get_json()
-        app.logger.info(f"Received Razorpay webhook: {webhook_data}")
+        app.logger.info(f"Received Cashfree webhook: {webhook_data}")
 
         # Process the payment based on the event type
         event = webhook_data.get('event')
+        app.logger.info(f"Processing webhook event: {event}")
 
-        if event == 'payment.captured':
-            payment_entity = webhook_data.get('payload', {}).get('payment', {}).get('entity', {})
-            order_id = payment_entity.get('order_id')
-            payment_id = payment_entity.get('id')
-            amount = payment_entity.get('amount')  # Amount in paise
+        if event == 'ORDER_PAID':
+            order_id = webhook_data.get('order', {}).get('order_id')
+            payment_id = webhook_data.get('order', {}).get('payment_id')
+            amount = webhook_data.get('order', {}).get('order_amount')
 
-            # Get order details to find user ID
+            app.logger.info(f"Payment captured - Order: {order_id}, Payment: {payment_id}, Amount: {amount}")
+
+            # For webhook, we need to get user ID from order metadata or database
+            # Since we stored user_id in customer_details, let's fetch order details
+            import requests
+
+            url = f"https://api.cashfree.com/pg/orders/{order_id}"
+            headers = {
+                "Content-Type": "application/json",
+                "x-api-version": "2022-09-01",
+                "x-client-id": CASHFREE_APP_ID,
+                "x-client-secret": CASHFREE_SECRET_KEY
+            }
+
             try:
-                if not razorpay_client:
-                    app.logger.error("Razorpay client not initialized")
-                    return jsonify({"error": "Payment service not configured"}), 500
+                response = requests.get(url, headers=headers)
+                if response.status_code == 200:
+                    order_details = response.json()
+                    user_id = order_details.get('customer_details', {}).get('customer_id')
 
-                order_details = razorpay_client.order.fetch(order_id)
-                notes = order_details.get('notes', {})
-                user_id = notes.get('user_id')
+                    if user_id:
+                        # Convert amount to int credits (₹1 = 1 credit)
+                        credits = int(float(amount))
+                        app.logger.info(f"Adding {credits} credits to user {user_id}")
 
-                if not user_id:
-                    app.logger.error("No user ID found in order notes")
-                    return jsonify({"error": "No user ID"}), 400
+                        # Add credits to user account
+                        success, result = firebase.add_user_credits(user_id, credits)
 
-                # Convert amount from paise to rupees and calculate credits
-                amount_rupees = int(amount) / 100
-                credits = int(amount_rupees)  # ₹1 per credit
-
-                # Add credits to user account
-                success, result = firebase.add_user_credits(user_id, credits)
-
-                if success:
-                    app.logger.info(f"Successfully added {credits} credits to user {user_id}")
-                    return jsonify({"status": "success"}), 200
+                        if success:
+                            app.logger.info(f"Successfully added {credits} credits to user {user_id}")
+                            return jsonify({"status": "success"}), 200
+                        else:
+                            app.logger.error(f"Failed to add credits: {result}")
+                            return jsonify({"error": "Failed to add credits"}), 500
+                    else:
+                        app.logger.error("No user ID found in order details")
+                        return jsonify({"error": "User ID not found"}), 400
                 else:
-                    app.logger.error(f"Failed to add credits: {result}")
-                    return jsonify({"error": "Failed to add credits"}), 500
+                    app.logger.error(f"Failed to fetch order details: {response.status_code}")
+                    return jsonify({"error": "Failed to fetch order"}), 500
 
-            except Exception as order_error:
-                app.logger.error(f"Error fetching order details: {order_error}")
-                return jsonify({"error": "Order fetch failed"}), 500
+            except Exception as fetch_error:
+                app.logger.error(f"Error fetching order details in webhook: {fetch_error}")
+                return jsonify({"error": "Webhook processing failed"}), 500
+
+        elif event == 'ORDER_FAILED':
+            app.logger.warning(f"Payment failed event received: {webhook_data}")
+            return jsonify({"status": "ignored"}), 200
 
         return jsonify({"status": "ignored"}), 200
 
@@ -656,11 +756,11 @@ def contact_support():
     """API endpoint to handle support contact form submissions"""
     if 'user' not in session:
         return jsonify({"error": "User not logged in"}), 401
-    
+
     try:
         user_id = session['user']['uid']
         data = request.get_json()
-        
+
         # Validate input
         if not data.get('subject'):
             return jsonify({"error": "Subject is required"}), 400
@@ -668,7 +768,7 @@ def contact_support():
             return jsonify({"error": "Message is required"}), 400
         if not data.get('email'):
             return jsonify({"error": "Email is required"}), 400
-        
+
         # Store support ticket in Firestore
         support_data = {
             'user_id': user_id,
@@ -680,20 +780,48 @@ def contact_support():
             'created_at': firestore.SERVER_TIMESTAMP,
             'updated_at': firestore.SERVER_TIMESTAMP
         }
-        
+
         firebase.db.collection('support_tickets').add(support_data)
-        
+
         # TODO: Send email notification to support team
         # You can integrate with email service here
-        
+
         return jsonify({
             "success": True,
             "message": "Support message sent successfully. We will get back to you soon."
         })
-        
+
     except Exception as e:
         app.logger.error(f"Error processing support request: {e}")
         return jsonify({"error": "Failed to send support message"}), 500
+
+@app.route("/api/update_mobile", methods=["POST"])
+def update_mobile():
+    """API endpoint to update user's mobile number."""
+    if 'user' not in session:
+        return jsonify({"error": "User not logged in"}), 401
+
+    data = request.json
+    mobile = data.get("mobile")
+
+    if not mobile or len(mobile) < 10:
+        return jsonify({"error": "Valid mobile number is required"}), 400
+
+    try:
+        user_id = session['user']['uid']
+        success, result = firebase.update_user_mobile(user_id, mobile)
+
+        if success:
+            # Update session data
+            session['user']['mobile'] = mobile
+            app.logger.info(f"Updated mobile number for user {user_id}")
+            return jsonify({"success": True, "message": "Mobile number updated successfully"}), 200
+        else:
+            app.logger.error(f"Failed to update mobile number: {result}")
+            return jsonify({"error": "Failed to update mobile number"}), 500
+    except Exception as e:
+        app.logger.error(f"Error updating mobile number: {e}")
+        return jsonify({"error": "Failed to update mobile number"}), 500
 
 @app.route("/api/google_auth", methods=["POST"])
 def google_auth():
