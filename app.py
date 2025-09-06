@@ -14,8 +14,6 @@ import requests
 import io
 import base64
 from document_processor import AadharProcessor, PanProcessor, VoterProcessor, DLProcessor, RCProcessor, ABHAProcessor, AyushmanProcessor, EshramProcessor
-import cashfree_pg as cf
-
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)
 
@@ -33,18 +31,6 @@ CASHFREE_ENVIRONMENT = os.getenv("CASHFREE_ENVIRONMENT", "TEST")  # TEST or PROD
 # Log current credentials for debugging
 app.logger.info(f"Using Cashfree App ID: {CASHFREE_APP_ID}")
 app.logger.info(f"Cashfree Environment: {CASHFREE_ENVIRONMENT}")
-
-# Initialize Cashfree client
-if CASHFREE_APP_ID and CASHFREE_SECRET_KEY:
-    from cashfree_pg.api_client import Cashfree
-    Cashfree.XClientId = CASHFREE_APP_ID
-    Cashfree.XClientSecret = CASHFREE_SECRET_KEY
-    Cashfree.XEnvironment = CASHFREE_ENVIRONMENT.lower()
-    cf_client = Cashfree
-    app.logger.info("Cashfree client initialized successfully")
-else:
-    app.logger.error("Cashfree credentials not configured")
-    cf_client = None
 
 # --- Main Routes (Pages) ---
 
@@ -267,7 +253,7 @@ def create_cashfree_order():
         return jsonify({"error": "Invalid amount"}), 400
 
     try:
-        if not cf_client:
+        if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
             app.logger.error("Payment service not configured")
             return jsonify({"error": "Payment service not configured"}), 500
 
@@ -361,7 +347,7 @@ def verify_cashfree_payment():
         return jsonify({"error": "Missing payment verification data"}), 400
 
     try:
-        if not cf_client:
+        if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
             app.logger.error("Cashfree client not initialized")
             return jsonify({"error": "Payment service not configured"}), 500
 
