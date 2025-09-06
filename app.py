@@ -43,7 +43,7 @@ else:
 @app.route("/")
 def render_homepage():
     """Renders the main homepage."""
-    return render_template('index.html')
+    return render_template('index.html', RAZORPAY_KEY_ID=RAZORPAY_KEY_ID)
 
 @app.route("/login", methods=['GET', 'POST'])
 def login():
@@ -192,9 +192,9 @@ def dashboard():
             if user_data.get('is_locked', False):
                 admin_contact = "officialnetrasarma@gmail.com"
                 lock_message = f"Your account is locked. Please contact admin at {admin_contact} to unlock."
-                return render_template('dashboard.html', user=user_data, lock_message=lock_message, transactions=transactions)
-            
-            return render_template('dashboard.html', user=user_data, transactions=transactions)
+                return render_template('dashboard.html', user=user_data, lock_message=lock_message, transactions=transactions, RAZORPAY_KEY_ID=RAZORPAY_KEY_ID)
+
+            return render_template('dashboard.html', user=user_data, transactions=transactions, RAZORPAY_KEY_ID=RAZORPAY_KEY_ID)
     return redirect(url_for('login'))
 
 @app.route("/change_password", methods=['GET', 'POST'])
